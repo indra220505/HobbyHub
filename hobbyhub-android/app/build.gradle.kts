@@ -30,8 +30,8 @@ android {
         }
         create("prod") {
             dimension = "environment"
-            buildConfigField("String", "API_BASE_URL", "\"https://api.hobbyhub.com/\"")
-            buildConfigField("String", "WS_BASE_URL", "\"wss://api.hobbyhub.com/\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://hobbyhub-production.up.railway.app/\"")
+            buildConfigField("String", "WS_BASE_URL", "\"wss://hobbyhub-production.up.railway.app/\"")
         }
     }
 
