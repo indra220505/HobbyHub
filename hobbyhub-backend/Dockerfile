@@ -1,11 +1,12 @@
 # Build Stage
-FROM gradle:8.5-jdk17 AS build
+FROM eclipse-temurin:17-jdk AS build
 WORKDIR /app
 COPY . /app
-RUN gradle bootJar -x test --no-daemon
+RUN chmod +x gradlew || true
+RUN if [ -f gradlew ]; then ./gradlew bootJar -x test --no-daemon; else gradle bootJar -x test --no-daemon; fi
 
 # Run Stage
-FROM openjdk:17-jdk-slim
+FROM eclipse-temurin:17-jre
 WORKDIR /app
 COPY --from=build /app/build/libs/app.jar app.jar
 EXPOSE 8080
