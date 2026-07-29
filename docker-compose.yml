@@ -1,0 +1,29 @@
+services:
+  # 1. PostgreSQL Primary Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: hobbyhub-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: hobbyhub_db
+      POSTGRES_USER: hobbyhub_user
+      POSTGRES_PASSWORD: hobbyhub_secret_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # 2. Redis Cache & Realtime State
+  redis:
+    image: redis:7-alpine
+    container_name: hobbyhub-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command: redis-server --save 60 1 --loglevel notice
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:

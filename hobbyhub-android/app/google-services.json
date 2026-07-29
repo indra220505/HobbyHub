@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1037670367037",
+    "project_id": "hobbyhub-ef9f3",
+    "storage_bucket": "hobbyhub-ef9f3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1037670367037:android:1dc6d099dd017e2f99cf54",
+        "android_client_info": {
+          "package_name": "com.hobbyhub"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD3ABNB2DaPuriuhVTSy2MVJ7feooFTJQM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,24 @@
+name: Deploy Backend to Render
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'hobbyhub-backend/**'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    # Assuming you connect this GitHub repo to Render, 
+    # Render can automatically build and deploy from the Dockerfile.
+    # Alternatively, if you want to trigger a Render deploy hook manually:
+    - name: Trigger Render Deployment
+      if: env.RENDER_DEPLOY_HOOK != ''
+      run: |
+        curl -X POST \${{ secrets.RENDER_DEPLOY_HOOK }}

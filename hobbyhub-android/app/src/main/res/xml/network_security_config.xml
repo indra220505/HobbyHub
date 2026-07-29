@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Untuk mempermudah testing lokal dengan IP dinamis komputer, 
+         kita izinkan cleartext (HTTP biasa).
+         Nantinya untuk rilis Production, ubah menjadi "false". -->
+    <base-config cleartextTrafficPermitted="true" />
+
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>
