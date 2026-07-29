@@ -1,12 +1,11 @@
-# Build Stage
-FROM eclipse-temurin:17-jdk AS build
+# Build Stage - use official Gradle image with JDK 17
+FROM gradle:8.5-jdk17-jammy AS build
 WORKDIR /app
 COPY . /app
-RUN chmod +x gradlew || true
-RUN if [ -f gradlew ]; then ./gradlew bootJar -x test --no-daemon; else gradle bootJar -x test --no-daemon; fi
+RUN gradle bootJar -x test --no-daemon
 
-# Run Stage
-FROM eclipse-temurin:17-jre
+# Run Stage - lightweight JRE only
+FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 COPY --from=build /app/build/libs/app.jar app.jar
 EXPOSE 8080
