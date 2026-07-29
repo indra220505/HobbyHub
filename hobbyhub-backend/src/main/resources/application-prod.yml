@@ -1,8 +1,6 @@
 spring:
   datasource:
     url: ${DATABASE_URL}
-    username: ${DATABASE_USERNAME}
-    password: ${DATABASE_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -17,6 +15,9 @@ spring:
     enabled: true
     baseline-on-migrate: true
 
+server:
+  port: ${PORT:8080}
+
 jwt:
   secret: ${JWT_SECRET}
   expiration-ms: 86400000 # 24 Hours
@@ -30,5 +31,5 @@ cloud:
     region:
       static: ${S3_REGION:us-east-1}
     s3:
-      endpoint: ${S3_ENDPOINT} # e.g. for Supabase or R2
+      endpoint: ${S3_ENDPOINT}
       bucket-name: ${S3_BUCKET_NAME}
