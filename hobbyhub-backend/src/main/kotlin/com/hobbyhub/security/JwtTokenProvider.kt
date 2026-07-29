@@ -2,6 +2,7 @@ package com.hobbyhub.security
 
 import io.jsonwebtoken.Claims
 import io.jsonwebtoken.Jwts
+import io.jsonwebtoken.SignatureAlgorithm
 import io.jsonwebtoken.security.Keys
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
@@ -25,12 +26,12 @@ class JwtTokenProvider(
         val expiryDate = Date(now.time + jwtExpirationMs)
 
         return Jwts.builder()
-            .subject(userId)
+            .setSubject(userId)
             .claim("email", email)
             .claim("username", username)
-            .issuedAt(now)
-            .expiration(expiryDate)
-            .signWith(key)
+            .setIssuedAt(now)
+            .setExpiration(expiryDate)
+            .signWith(key, SignatureAlgorithm.HS256)
             .compact()
     }
     
@@ -39,28 +40,27 @@ class JwtTokenProvider(
         val expiryDate = Date(now.time + (jwtExpirationMs * 7)) // 7 days
 
         return Jwts.builder()
-            .subject(userId)
-            .issuedAt(now)
-            .expiration(expiryDate)
-            .signWith(key)
+            .setSubject(userId)
+            .setIssuedAt(now)
+            .setExpiration(expiryDate)
+            .signWith(key, SignatureAlgorithm.HS256)
             .compact()
     }
 
     fun getUserIdFromJWT(token: String): String {
-        val claims: Claims = Jwts.parser()
-            .verifyWith(key)
+        val claims: Claims = Jwts.parserBuilder()
+            .setSigningKey(key)
             .build()
-            .parseSignedClaims(token)
-            .payload
+            .parseClaimsJws(token)
+            .body
         return claims.subject
     }
 
     fun validateToken(authToken: String): Boolean {
         try {
-            Jwts.parser().verifyWith(key).build().parseSignedClaims(authToken)
+            Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(authToken)
             return true
         } catch (ex: Exception) {
-            // Log exceptions here (e.g., ExpiredJwtException, UnsupportedJwtException, MalformedJwtException)
             println("Invalid JWT Token: ${ex.message}")
         }
         return false
@@ -68,7 +68,6 @@ class JwtTokenProvider(
 
     fun getAuthentication(token: String): Authentication {
         val userId = getUserIdFromJWT(token)
-        // Usually you'd fetch the user and their roles here, but we can store roles in claims if needed
         val authorities = listOf(SimpleGrantedAuthority("ROLE_USER"))
         return UsernamePasswordAuthenticationToken(userId, null, authorities)
     }
