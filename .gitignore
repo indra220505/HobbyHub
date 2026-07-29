@@ -3,6 +3,9 @@
 **/build/
 !gradle/wrapper/gradle-wrapper.jar
 
+# Memory Dumps & Profiler
+*.hprof
+
 # IDE
 .idea/
 *.iml
