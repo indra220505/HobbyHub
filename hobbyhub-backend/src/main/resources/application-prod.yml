@@ -41,10 +41,15 @@ spring:
             required: ${SPRING_MAIL_STARTTLS_REQUIRED:true}
           ssl:
             enable: ${SPRING_MAIL_SSL_ENABLE:false}
-          connectiontimeout: 5000
-          timeout: 5000
-          writetimeout: 5000
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
 
+brevo:
+  api-key: ${BREVO_API_KEY:}
+
+resend:
+  api-key: ${RESEND_API_KEY:}
 
 server:
   port: ${PORT:8080}

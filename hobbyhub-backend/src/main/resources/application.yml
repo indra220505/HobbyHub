@@ -45,11 +45,19 @@ spring:
         smtp:
           auth: true
           starttls:
-            enable: true
-            required: true
-          connectiontimeout: 5000
-          timeout: 5000
-          writetimeout: 5000
+            enable: ${SPRING_MAIL_STARTTLS_ENABLE:true}
+            required: ${SPRING_MAIL_STARTTLS_REQUIRED:true}
+          ssl:
+            enable: ${SPRING_MAIL_SSL_ENABLE:false}
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
+
+brevo:
+  api-key: ${BREVO_API_KEY:}
+
+resend:
+  api-key: ${RESEND_API_KEY:}
 
 jwt:
   secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
