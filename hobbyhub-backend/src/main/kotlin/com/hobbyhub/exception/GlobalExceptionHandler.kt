@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 import java.sql.SQLException
 
 data class ErrorResponse(
+    val success: Boolean = false,
     val message: String,
     val timestamp: Long = System.currentTimeMillis()
 )
@@ -18,12 +19,20 @@ class GlobalExceptionHandler {
 
     private val log = LoggerFactory.getLogger(GlobalExceptionHandler::class.java)
 
+    @ExceptionHandler(EmailDeliveryException::class)
+    fun handleEmailDeliveryException(ex: EmailDeliveryException): ResponseEntity<ErrorResponse> {
+        log.error("Email Delivery Error (EmailDeliveryException): {}", ex.message)
+        return ResponseEntity
+            .status(HttpStatus.INTERNAL_SERVER_ERROR)
+            .body(ErrorResponse(success = false, message = ex.message ?: "Verification email could not be sent. Please try again later."))
+    }
+
     @ExceptionHandler(IllegalArgumentException::class)
     fun handleIllegalArgumentException(ex: IllegalArgumentException): ResponseEntity<ErrorResponse> {
         log.warn("Business Logic Warning (IllegalArgumentException): {}", ex.message)
         return ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
-            .body(ErrorResponse(message = ex.message ?: "Permintaan tidak valid."))
+            .body(ErrorResponse(success = false, message = ex.message ?: "Permintaan tidak valid."))
     }
 
     @ExceptionHandler(IllegalStateException::class)
@@ -31,7 +40,7 @@ class GlobalExceptionHandler {
         log.warn("State Warning (IllegalStateException): {}", ex.message)
         return ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
-            .body(ErrorResponse(message = ex.message ?: "Status tidak valid."))
+            .body(ErrorResponse(success = false, message = ex.message ?: "Status tidak valid."))
     }
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
@@ -40,7 +49,7 @@ class GlobalExceptionHandler {
         log.warn("Validation Error: {}", errors)
         return ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
-            .body(ErrorResponse(message = errors))
+            .body(ErrorResponse(success = false, message = errors))
     }
 
     @ExceptionHandler(SQLException::class)
@@ -48,7 +57,7 @@ class GlobalExceptionHandler {
         log.error("Database Error: ", ex)
         return ResponseEntity
             .status(HttpStatus.SERVICE_UNAVAILABLE)
-            .body(ErrorResponse(message = "Layanan database sedang tidak tersedia sementara."))
+            .body(ErrorResponse(success = false, message = "Layanan database sedang tidak tersedia sementara."))
     }
 
     @ExceptionHandler(Exception::class)
@@ -56,6 +65,6 @@ class GlobalExceptionHandler {
         log.error("Unhandled Exception caught by GlobalExceptionHandler: {}", ex.message, ex)
         return ResponseEntity
             .status(HttpStatus.INTERNAL_SERVER_ERROR)
-            .body(ErrorResponse(message = ex.message ?: "Terjadi kesalahan internal pada server."))
+            .body(ErrorResponse(success = false, message = ex.message ?: "Terjadi kesalahan internal pada server."))
     }
 }

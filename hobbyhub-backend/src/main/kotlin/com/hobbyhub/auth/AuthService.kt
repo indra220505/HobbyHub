@@ -4,6 +4,7 @@ import com.hobbyhub.domain.user.User
 import com.hobbyhub.domain.user.UserRepository
 import com.hobbyhub.security.JwtTokenProvider
 import com.hobbyhub.service.EmailService
+import org.slf4j.LoggerFactory
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -17,6 +18,7 @@ class AuthService(
     private val jwtTokenProvider: JwtTokenProvider,
     private val emailService: EmailService
 ) {
+    private val log = LoggerFactory.getLogger(AuthService::class.java)
 
     @Transactional
     fun register(request: RegisterRequest): AuthResponse {
@@ -34,6 +36,7 @@ class AuthService(
             throw IllegalArgumentException("Username '$usernameClean' sudah digunakan. Silakan pilih username lain.")
         }
 
+        log.info("Creating OTP...")
         val otpCode = generateVerificationCode()
         val otpExpiry = LocalDateTime.now().plusMinutes(5) // OTP valid for 5 minutes
 
@@ -48,13 +51,16 @@ class AuthService(
         )
 
         val savedUser = userRepository.save(user)
+        log.info("OTP stored in database for [{}].", emailClean)
 
-        // Send OTP email via SMTP / EmailService
+        // Send OTP email via SMTP / EmailService (Synchronous call).
+        // Throws EmailDeliveryException if all retries fail, triggering transaction rollback!
         emailService.sendOtpEmail(savedUser.email, otpCode)
 
         val token = jwtTokenProvider.generateAccessToken(savedUser.id.toString(), savedUser.email, savedUser.username)
         val refreshToken = jwtTokenProvider.generateRefreshToken(savedUser.id.toString())
 
+        log.info("Registration Completed successfully for [{}].", emailClean)
         return AuthResponse(token, refreshToken, toUserDto(savedUser))
     }
 
@@ -129,19 +135,23 @@ class AuthService(
             return AuthResponse(token, refreshToken, toUserDto(user))
         }
 
+        log.info("Creating new OTP for resend...")
         val newOtpCode = generateVerificationCode()
         val newExpiry = LocalDateTime.now().plusMinutes(5) // New 5-minute expiry
 
         user.verificationCode = newOtpCode
         user.verificationExpiry = newExpiry
         val savedUser = userRepository.save(user)
+        log.info("New OTP stored in database for [{}].", emailClean)
 
-        // Send new OTP email via SMTP / EmailService
+        // Send new OTP email via SMTP / EmailService (Synchronous call).
+        // Throws EmailDeliveryException if all retries fail, triggering transaction rollback!
         emailService.sendOtpEmail(savedUser.email, newOtpCode)
 
         val token = jwtTokenProvider.generateAccessToken(savedUser.id.toString(), savedUser.email, savedUser.username)
         val refreshToken = jwtTokenProvider.generateRefreshToken(savedUser.id.toString())
 
+        log.info("Resend OTP Completed successfully for [{}].", emailClean)
         return AuthResponse(token, refreshToken, toUserDto(savedUser))
     }
 

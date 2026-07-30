@@ -37,11 +37,13 @@ spring:
         smtp:
           auth: true
           starttls:
-            enable: true
-            required: true
-          connectiontimeout: 15000
-          timeout: 15000
-          writetimeout: 15000
+            enable: ${SPRING_MAIL_STARTTLS_ENABLE:true}
+            required: ${SPRING_MAIL_STARTTLS_REQUIRED:true}
+          ssl:
+            enable: ${SPRING_MAIL_SSL_ENABLE:false}
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
 
 
 server:
