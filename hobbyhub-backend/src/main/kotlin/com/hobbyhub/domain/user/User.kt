@@ -10,6 +10,7 @@ import java.util.UUID
 data class User(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
+    @Column(columnDefinition = "uuid")
     val id: UUID? = null,
 
     @Column(unique = true, nullable = false)
