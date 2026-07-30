@@ -31,6 +31,7 @@ import com.hobbyhub.data.remote.NetworkModule
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onCommunityClick: (Community) -> Unit = {}
