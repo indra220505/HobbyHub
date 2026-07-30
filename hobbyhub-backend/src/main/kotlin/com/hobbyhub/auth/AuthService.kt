@@ -18,20 +18,24 @@ class AuthService(
 
     @Transactional
     fun register(request: RegisterRequest): AuthResponse {
-        if (userRepository.existsByEmail(request.email)) {
+        val emailClean = request.email.trim().lowercase()
+        val usernameClean = request.username.trim().lowercase()
+
+        if (userRepository.existsByEmail(emailClean)) {
             throw IllegalArgumentException("Email already registered")
         }
-        if (userRepository.existsByUsername(request.username)) {
+        if (userRepository.existsByUsername(usernameClean)) {
             throw IllegalArgumentException("Username already taken")
         }
 
         val verificationCode = generateVerificationCode()
         
         val user = User(
-            email = request.email,
+            email = emailClean,
             passwordHash = passwordEncoder.encode(request.passwordHash),
-            username = request.username,
-            displayName = request.displayName,
+            username = usernameClean,
+            displayName = request.displayName.trim(),
+            isVerified = true, // Auto-verify upon registration for instant access
             verificationCode = verificationCode,
             verificationExpiry = LocalDateTime.now().plusMinutes(10)
         )
@@ -40,10 +44,7 @@ class AuthService(
         
         // Simulating email send by printing to console for local dev
         println("==================================================")
-        println("EMAIL SIMULATION:")
-        println("To: ${savedUser.email}")
-        println("Subject: Your HobbyHub Verification Code")
-        println("Code: $verificationCode")
+        println("EMAIL VERIFICATION CODE FOR ${savedUser.email}: $verificationCode")
         println("==================================================")
 
         val token = jwtTokenProvider.generateAccessToken(savedUser.id!!, savedUser.email, savedUser.username)
@@ -54,7 +55,8 @@ class AuthService(
 
     @Transactional
     fun login(request: LoginRequest): AuthResponse {
-        val user = userRepository.findByEmail(request.email)
+        val emailClean = request.email.trim().lowercase()
+        val user = userRepository.findByEmail(emailClean)
             ?: throw IllegalArgumentException("Invalid credentials")
 
         if (!passwordEncoder.matches(request.passwordHash, user.passwordHash)) {

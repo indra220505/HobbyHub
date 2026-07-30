@@ -25,8 +25,8 @@ android {
     productFlavors {
         create("dev") {
             dimension = "environment"
-            buildConfigField("String", "API_BASE_URL", "\"http://10.242.74.1:8080/\"")
-            buildConfigField("String", "WS_BASE_URL", "\"ws://10.242.74.1:8080/\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://hobbyhub-production.up.railway.app/\"")
+            buildConfigField("String", "WS_BASE_URL", "\"wss://hobbyhub-production.up.railway.app/\"")
         }
         create("prod") {
             dimension = "environment"
