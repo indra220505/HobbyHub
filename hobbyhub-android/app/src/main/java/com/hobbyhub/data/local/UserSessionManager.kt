@@ -97,6 +97,10 @@ class UserSessionManager(context: Context) {
 
     fun getSessionEmail(): String = prefs.getString(KEY_EMAIL, "") ?: ""
 
+    fun updateDisplayName(newName: String) {
+        prefs.edit().putString(KEY_DISPLAY_NAME, newName).apply()
+    }
+
     fun markEmailVerified() {
         prefs.edit().putBoolean(KEY_IS_EMAIL_VERIFIED, true).apply()
     }

@@ -46,7 +46,9 @@ sealed class Screen(val route: String, val title: String, val icon: androidx.com
 }
 
 @Composable
-fun AppNavigation() {
+fun AppNavigation(
+    initialCommunityId: String? = null
+) {
     val context = LocalContext.current
     val sessionManager = remember { UserSessionManager(context) }
     val commDb = remember { CommunityRegistryManager(context) }
@@ -57,8 +59,9 @@ fun AppNavigation() {
     var currentScreen by remember {
         mutableStateOf<String>(
             if (sessionManager.isLoggedIn()) {
-                // Check if email is verified before allowing access
-                if (sessionManager.isEmailVerifiedSession()) "explore" else "email_verification"
+                if (initialCommunityId != null) {
+                    "community_detail"
+                } else if (sessionManager.isEmailVerifiedSession()) "explore" else "email_verification"
             } else "login"
         )
     }
@@ -75,7 +78,13 @@ fun AppNavigation() {
     var pendingEmail by remember { mutableStateOf<String>("") }
     var pendingPassword by remember { mutableStateOf<String>("") }
 
-    var selectedCommunity by remember { mutableStateOf<Community>(initialCommunities[0]) }
+    var selectedCommunity by remember {
+        mutableStateOf<Community>(
+            if (initialCommunityId != null) {
+                commDb.getCommunityById(initialCommunityId) ?: initialCommunities[0]
+            } else initialCommunities[0]
+        )
+    }
     var selectedChannelName by remember { mutableStateOf<String>("general") }
 
     Scaffold(

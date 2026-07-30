@@ -64,7 +64,15 @@ fun HomeScreen(
         }
     }
 
-    val categories = listOf("Semua", "Programming", "AI / ML", "Gaming", "Fotografi", "Trading", "Music")
+    val categories = remember(allCommunities) {
+        val list = mutableListOf("Semua", "🔥 Trending")
+        allCommunities.forEach { comm ->
+            if (comm.category.isNotBlank() && !list.contains(comm.category)) {
+                list.add(comm.category)
+            }
+        }
+        list
+    }
     var selectedCategory by remember { mutableStateOf("Semua") }
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
@@ -72,11 +80,22 @@ fun HomeScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
 
     val filteredCommunities = remember(selectedCategory, searchQuery, allCommunities) {
-        allCommunities.filter { comm ->
-            val matchCategory = selectedCategory == "Semua" || comm.category.equals(selectedCategory, ignoreCase = true)
-            val matchQuery = searchQuery.isBlank() || comm.name.contains(searchQuery, ignoreCase = true) || comm.description.contains(searchQuery, ignoreCase = true)
-            matchCategory && matchQuery
+        var result = allCommunities.filter { comm ->
+            val matchesCategory = when (selectedCategory) {
+                "Semua", "🔥 Trending" -> true
+                else -> comm.category.equals(selectedCategory, ignoreCase = true)
+            }
+            val matchesSearch = comm.name.contains(searchQuery, ignoreCase = true) ||
+                    comm.description.contains(searchQuery, ignoreCase = true) ||
+                    comm.category.contains(searchQuery, ignoreCase = true)
+            matchesCategory && matchesSearch
         }
+        if (selectedCategory == "🔥 Trending") {
+            result = result.sortedByDescending { comm ->
+                comm.memberCount.filter { it.isDigit() }.toIntOrNull() ?: 0
+            }
+        }
+        result
     }
 
     Scaffold(

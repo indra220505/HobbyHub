@@ -80,7 +80,15 @@ fun ProfileScreen(
                         Text(text = user.displayName.take(1), color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                     }
                     Spacer(modifier = Modifier.height(10.dp))
-                    Text(text = user.displayName, color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    var currentDisplayName by remember { mutableStateOf(user.displayName) }
+                    var showEditNameDialog by remember { mutableStateOf(false) }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = currentDisplayName, color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        IconButton(onClick = { showEditNameDialog = true }) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit Display Name", tint = PrimaryViolet, modifier = Modifier.size(18.dp))
+                        }
+                    }
                     Text(text = "@${user.username}", color = TextMuted, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(6.dp))
 
@@ -99,6 +107,50 @@ fun ProfileScreen(
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(text = user.bio, color = TextMuted, fontSize = 13.sp)
+
+                    if (showEditNameDialog) {
+                        var tempName by remember { mutableStateOf(currentDisplayName) }
+                        AlertDialog(
+                            onDismissRequest = { showEditNameDialog = false },
+                            containerColor = SurfaceCard,
+                            title = { Text("Ganti Nama Tampilan", color = TextPrimary, fontWeight = FontWeight.Bold) },
+                            text = {
+                                OutlinedTextField(
+                                    value = tempName,
+                                    onValueChange = { tempName = it },
+                                    label = { Text("Nama Tampilan Baru", color = TextMuted) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = PrimaryViolet,
+                                        unfocusedBorderColor = BorderDark,
+                                        focusedTextColor = TextPrimary,
+                                        unfocusedTextColor = TextPrimary
+                                    )
+                                )
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        if (tempName.isNotBlank()) {
+                                            currentDisplayName = tempName
+                                            val sessionManager = UserSessionManager(context)
+                                            sessionManager.updateDisplayName(tempName)
+                                            showEditNameDialog = false
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryViolet)
+                                ) {
+                                    Text("Simpan", color = TextPrimary)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showEditNameDialog = false }) {
+                                    Text("Batal", color = TextMuted)
+                                }
+                            }
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 

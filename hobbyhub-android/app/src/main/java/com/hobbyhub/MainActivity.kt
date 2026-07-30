@@ -9,9 +9,10 @@ import com.hobbyhub.ui.theme.HobbyHubTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val deepLinkCommunityId = intent?.data?.lastPathSegment
         setContent {
             HobbyHubTheme {
-                AppNavigation()
+                AppNavigation(initialCommunityId = deepLinkCommunityId)
             }
         }
     }

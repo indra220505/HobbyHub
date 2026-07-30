@@ -67,6 +67,14 @@ fun CommunityDetailScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("Link Komunitas", "hobbyhub://community/${currentCommunity.id}")
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "Link komunitas disalin: hobbyhub://community/${currentCommunity.id}", Toast.LENGTH_LONG).show()
+                    }) {
+                        Icon(Icons.Default.Share, contentDescription = "Salin Link Komunitas", tint = SecondaryTurquoise)
+                    }
                     if (isOwner) {
                         IconButton(onClick = { showAddChannelDialog = true }) {
                             Icon(Icons.Default.Add, contentDescription = "Tambah Channel", tint = PrimaryViolet)

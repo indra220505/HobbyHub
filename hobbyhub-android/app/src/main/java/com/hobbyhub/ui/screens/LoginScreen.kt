@@ -138,7 +138,27 @@ fun LoginScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        var isCaptchaVerified by remember { mutableStateOf(false) }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(SurfaceCard, RoundedCornerShape(8.dp))
+                .border(1.dp, BorderDark, RoundedCornerShape(8.dp))
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = isCaptchaVerified,
+                onCheckedChange = { isCaptchaVerified = it },
+                colors = CheckboxDefaults.colors(checkedColor = PrimaryViolet)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Saya bukan robot (Anti-Spam CAPTCHA)", color = TextPrimary, fontSize = 13.sp)
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
 
         Button(
             onClick = {
@@ -149,6 +169,9 @@ fun LoginScreen(
                     }
                     !Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches() -> {
                         errorMessage = "Format email tidak valid! Contoh: nama@gmail.com"
+                    }
+                    !isCaptchaVerified -> {
+                        errorMessage = "Silakan centang 'Saya bukan robot' untuk melanjutkan."
                     }
                     else -> {
                         isLoading = true

@@ -380,16 +380,36 @@ fun RegisterScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        var isCaptchaVerified by remember { mutableStateOf(false) }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(SurfaceCard, RoundedCornerShape(8.dp))
+                .border(1.dp, BorderDark, RoundedCornerShape(8.dp))
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = isCaptchaVerified,
+                onCheckedChange = { isCaptchaVerified = it },
+                colors = CheckboxDefaults.colors(checkedColor = PrimaryViolet)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Saya bukan robot (Anti-Spam CAPTCHA)", color = TextPrimary, fontSize = 13.sp)
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
 
         // Register Button (Disabled unless all validations pass)
         Button(
             onClick = {
-                if (isFormValid) {
+                if (isFormValid && isCaptchaVerified) {
                     onRegisterSuccess(displayName.trim(), username.trim().lowercase(), email.trim().lowercase(), password)
                 }
             },
-            enabled = isFormValid,
+            enabled = isFormValid && isCaptchaVerified,
             colors = ButtonDefaults.buttonColors(
                 containerColor = PrimaryViolet,
                 disabledContainerColor = BorderDark,

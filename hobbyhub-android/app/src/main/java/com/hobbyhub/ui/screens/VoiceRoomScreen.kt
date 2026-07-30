@@ -101,6 +101,8 @@ fun VoiceRoomScreen(
         isLeaving = true
 
         try {
+            AudioEffectsManager.playVoiceJoinLeaveSound(context)
+            VoiceForegroundService.stopService(context)
             signalingClient?.disconnect()
         } catch (e: Exception) {
             Log.e("VoiceRoomScreen", "Error disconnecting signaling", e)
@@ -152,6 +154,10 @@ fun VoiceRoomScreen(
             return@DisposableEffect onDispose {}
         }
 
+        // Play Join SFX and start Foreground Service
+        AudioEffectsManager.playVoiceJoinLeaveSound(context)
+        VoiceForegroundService.startService(context, channelName)
+
         val sigClient = SignalingClient(
             userId = currentUser.id,
             userName = currentUser.displayName,
@@ -180,6 +186,7 @@ fun VoiceRoomScreen(
                 override fun onUserJoined(senderId: String, senderName: String?) {
                     if (isLeaving) return
                     mainHandler.post {
+                        AudioEffectsManager.playVoiceJoinLeaveSound(context)
                         updateOrAddParticipant(senderId, senderName)
                     }
                     webRtcClient?.handleUserJoined(senderId)
@@ -188,6 +195,7 @@ fun VoiceRoomScreen(
                 override fun onUserLeft(senderId: String) {
                     if (isLeaving) return
                     mainHandler.post {
+                        AudioEffectsManager.playVoiceJoinLeaveSound(context)
                         participants.removeAll { it.id == senderId }
                     }
                     webRtcClient?.handleUserLeft(senderId)

@@ -243,6 +243,27 @@ class CommunityRegistryManager(context: Context) {
         return list
     }
 
+    fun updateChannel(communityId: String, channelId: String, newName: String, newType: ChannelType): List<Community> {
+        val list = getAllCommunities().toMutableList()
+        val index = list.indexOfFirst { it.id == communityId }
+        if (index != -1) {
+            val comm = list[index]
+            val updatedChannels = comm.channels.map { ch ->
+                if (ch.id == channelId) {
+                    ch.copy(
+                        name = newName.lowercase().replace(" ", "-"),
+                        type = newType
+                    )
+                } else {
+                    ch
+                }
+            }
+            list[index] = comm.copy(channels = updatedChannels)
+            saveCommunities(list)
+        }
+        return list
+    }
+
     fun deleteChannel(communityId: String, channelId: String): List<Community> {
         val list = getAllCommunities().toMutableList()
         val index = list.indexOfFirst { it.id == communityId }
