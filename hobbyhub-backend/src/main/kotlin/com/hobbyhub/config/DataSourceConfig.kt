@@ -45,8 +45,6 @@ class DataSourceConfig(
                 var jdbcUrl = "jdbc:postgresql://$host:$port$path"
                 if (dbUri.query != null) {
                     jdbcUrl += "?${dbUri.query}"
-                } else {
-                    jdbcUrl += "?sslmode=require"
                 }
 
                 config.jdbcUrl = jdbcUrl
@@ -62,7 +60,7 @@ class DataSourceConfig(
         // 2. Try individual Railway Postgres variables (PGHOST, PGUSER, etc.)
         else if (pgHost.isNotBlank() && pgDatabase.isNotBlank()) {
             log.info("✅ Detected Railway PGHOST ($pgHost) and PGDATABASE ($pgDatabase). Constructing JDBC URL...")
-            config.jdbcUrl = "jdbc:postgresql://$pgHost:$pgPort/$pgDatabase?sslmode=require"
+            config.jdbcUrl = "jdbc:postgresql://$pgHost:$pgPort/$pgDatabase"
             config.username = pgUser
             config.password = pgPassword
             config.driverClassName = "org.postgresql.Driver"
