@@ -42,7 +42,20 @@ class WebRtcClient(
         PeerConnection.IceServer.builder("stun:stun2.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun3.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun4.l.google.com:19302").createIceServer(),
-        PeerConnection.IceServer.builder("stun:global.stun.twilio.com:3478").createIceServer()
+        PeerConnection.IceServer.builder("stun:global.stun.twilio.com:3478").createIceServer(),
+        PeerConnection.IceServer.builder("stun:stun.services.mozilla.com").createIceServer(),
+        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:80")
+            .setUsername("openrelay")
+            .setPassword("openrelay")
+            .createIceServer(),
+        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443")
+            .setUsername("openrelay")
+            .setPassword("openrelay")
+            .createIceServer(),
+        PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443?transport=tcp")
+            .setUsername("openrelay")
+            .setPassword("openrelay")
+            .createIceServer()
     )
 
     init {

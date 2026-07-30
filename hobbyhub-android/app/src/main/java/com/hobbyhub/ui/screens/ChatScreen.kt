@@ -3,7 +3,9 @@ package com.hobbyhub.ui.screens
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -42,7 +44,8 @@ data class WsPayload(
     val senderAvatar: String = "U",
     val senderBadge: String = "Member",
     val content: String = "",
-    val timestamp: String = "Baru saja"
+    val timestamp: String = "Baru saja",
+    val type: String = "CHAT" // "CHAT" or "DELETE"
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,14 +58,48 @@ fun ChatScreen(
     val chatDb = remember { ChatLocalDatabaseManager(context) }
     val sessionManager = remember { UserSessionManager(context) }
     val currentUser = remember { sessionManager.getUser() }
-    val gson = remember { Gson() }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val gson = remember { Gson() }
     val coroutineScope = rememberCoroutineScope()
 
     var messageText by remember { mutableStateOf("") }
     val messages = remember { mutableStateListOf(*chatDb.getMessagesForChannel(channelName).toTypedArray()) }
     var webSocket by remember { mutableStateOf<WebSocket?>(null) }
     var isConnected by remember { mutableStateOf(false) }
+
+    var messageToDelete by remember { mutableStateOf<ChatMessage?>(null) }
+
+    fun deleteMessageLocallyAndRemote(msg: ChatMessage) {
+        // 1. Remove from local memory list and local database
+        messages.removeAll { it.id == msg.id }
+        chatDb.deleteMessageFromChannel(channelName, msg.id)
+
+        // 2. Send DELETE payload over WebSocket to broadcast deletion to active peers
+        try {
+            val deletePayload = WsPayload(
+                id = msg.id,
+                channelName = channelName,
+                type = "DELETE"
+            )
+            webSocket?.send(gson.toJson(deletePayload))
+        } catch (e: Exception) {
+            Log.e("ChatScreen", "Error sending WebSocket delete message", e)
+        }
+
+        // 3. Send DELETE HTTP REST request to Railway backend for database persistence
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val httpUrl = BuildConfig.API_BASE_URL + "api/chat/history/" + channelName + "/" + msg.id
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                val request = Request.Builder().url(httpUrl).delete().build()
+                client.newCall(request).execute()
+            } catch (e: Exception) {
+                Log.e("ChatScreen", "Error sending REST delete message", e)
+            }
+        }
+    }
 
     // Fetch initial chat history safely from Railway REST API
     LaunchedEffect(channelName) {
@@ -88,18 +125,23 @@ fun ChatScreen(
                                     val remoteHistory: List<WsPayload> = gson.fromJson(json, listType) ?: emptyList()
                                     mainHandler.post {
                                         remoteHistory.forEach { item ->
-                                            val safeAvatar = item.senderAvatar.ifBlank { item.senderName.take(1).ifBlank { "U" } }
-                                            val msg = ChatMessage(
-                                                id = item.id.ifBlank { "msg_${System.currentTimeMillis()}" },
-                                                senderName = item.senderName.ifBlank { "Member" },
-                                                senderAvatar = safeAvatar,
-                                                senderBadge = RoleBadge(item.senderBadge.ifBlank { "Member" }, "#6C5CE7"),
-                                                content = item.content,
-                                                timestamp = item.timestamp.ifBlank { "Baru saja" }
-                                            )
-                                            if (messages.none { it.id == msg.id }) {
-                                                messages.add(msg)
-                                                chatDb.saveMessageToChannel(channelName, msg)
+                                            if (item.type == "DELETE") {
+                                                messages.removeAll { it.id == item.id }
+                                                chatDb.deleteMessageFromChannel(channelName, item.id)
+                                            } else {
+                                                val safeAvatar = item.senderAvatar.ifBlank { item.senderName.take(1).ifBlank { "U" } }
+                                                val msg = ChatMessage(
+                                                    id = item.id.ifBlank { "msg_${System.currentTimeMillis()}" },
+                                                    senderName = item.senderName.ifBlank { "Member" },
+                                                    senderAvatar = safeAvatar,
+                                                    senderBadge = RoleBadge(item.senderBadge.ifBlank { "Member" }, "#6C5CE7"),
+                                                    content = item.content,
+                                                    timestamp = item.timestamp.ifBlank { "Baru saja" }
+                                                )
+                                                if (messages.none { it.id == msg.id }) {
+                                                    messages.add(msg)
+                                                    chatDb.saveMessageToChannel(channelName, msg)
+                                                }
                                             }
                                         }
                                     }
@@ -138,21 +180,27 @@ fun ChatScreen(
                     if (text.isNotBlank() && text.startsWith("{")) {
                         val payload = gson.fromJson(text, WsPayload::class.java)
                         if (payload != null && payload.channelName.equals(channelName, ignoreCase = true)) {
-                            val safeAvatar = payload.senderAvatar.ifBlank { payload.senderName.take(1).ifBlank { "U" } }
-                            val newMsg = ChatMessage(
-                                id = payload.id.ifBlank { "msg_${System.currentTimeMillis()}" },
-                                senderName = payload.senderName.ifBlank { "Member" },
-                                senderAvatar = safeAvatar,
-                                senderBadge = RoleBadge(payload.senderBadge.ifBlank { "Member" }, "#6C5CE7"),
-                                content = payload.content,
-                                timestamp = payload.timestamp.ifBlank { "Baru saja" }
-                            )
+                            if (payload.type == "DELETE") {
+                                mainHandler.post {
+                                    messages.removeAll { it.id == payload.id }
+                                    chatDb.deleteMessageFromChannel(channelName, payload.id)
+                                }
+                            } else {
+                                val safeAvatar = payload.senderAvatar.ifBlank { payload.senderName.take(1).ifBlank { "U" } }
+                                val newMsg = ChatMessage(
+                                    id = payload.id.ifBlank { "msg_${System.currentTimeMillis()}" },
+                                    senderName = payload.senderName.ifBlank { "Member" },
+                                    senderAvatar = safeAvatar,
+                                    senderBadge = RoleBadge(payload.senderBadge.ifBlank { "Member" }, "#6C5CE7"),
+                                    content = payload.content,
+                                    timestamp = payload.timestamp.ifBlank { "Baru saja" }
+                                )
 
-                            // CRITICAL: Post to Main Thread safely for Compose Recomposition!
-                            mainHandler.post {
-                                if (messages.none { it.id == newMsg.id }) {
-                                    messages.add(newMsg)
-                                    chatDb.saveMessageToChannel(channelName, newMsg)
+                                mainHandler.post {
+                                    if (messages.none { it.id == newMsg.id }) {
+                                        messages.add(newMsg)
+                                        chatDb.saveMessageToChannel(channelName, newMsg)
+                                    }
                                 }
                             }
                         }
@@ -207,11 +255,6 @@ fun ChatScreen(
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextPrimary)
                     }
                 },
-                actions = {
-                    IconButton(onClick = {}) {
-                        Icon(Icons.Default.PushPin, contentDescription = "Pinned", tint = TextPrimary)
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = ObsidianBg)
             )
         },
@@ -220,70 +263,70 @@ fun ChatScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(SurfaceCard)
-                    .padding(8.dp),
+                    .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = {}) {
-                    Icon(Icons.Default.Add, contentDescription = "Attach", tint = TextMuted)
-                }
-                TextField(
+                OutlinedTextField(
                     value = messageText,
                     onValueChange = { messageText = it },
                     placeholder = { Text("Ketik pesan di #$channelName...", color = TextMuted) },
                     modifier = Modifier.weight(1f),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = ObsidianBg,
-                        unfocusedContainerColor = ObsidianBg,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PrimaryViolet,
+                        unfocusedBorderColor = BorderDark,
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary
                     ),
                     shape = RoundedCornerShape(24.dp)
                 )
-                Spacer(modifier = Modifier.width(4.dp))
+
+                Spacer(modifier = Modifier.width(8.dp))
+
                 IconButton(
                     onClick = {
                         if (messageText.isNotBlank()) {
+                            val textToSend = messageText
+                            messageText = ""
+
+                            val currentAvatar = currentUser.displayName.take(1).ifBlank { "U" }.uppercase()
                             val msgId = "msg_${System.currentTimeMillis()}"
-                            val avatarInitial = currentUser.displayName.take(1).ifBlank { "U" }
+
                             val newMsg = ChatMessage(
                                 id = msgId,
-                                senderName = currentUser.displayName.ifBlank { "Member" },
-                                senderAvatar = avatarInitial,
-                                senderBadge = currentUser.roleBadge,
-                                content = messageText,
+                                senderName = currentUser.displayName,
+                                senderAvatar = currentAvatar,
+                                senderBadge = currentUser.roleBadge ?: RoleBadge("Member", "#6C5CE7"),
+                                content = textToSend,
                                 timestamp = "Baru saja"
                             )
 
-                            // Add locally on Main thread safely
-                            if (messages.none { it.id == newMsg.id }) {
-                                messages.add(newMsg)
-                                chatDb.saveMessageToChannel(channelName, newMsg)
-                            }
+                            // 1. Save to local list immediately
+                            messages.add(newMsg)
+                            chatDb.saveMessageToChannel(channelName, newMsg)
 
-                            // Send via WebSocket broadcast safely
+                            // 2. Broadcast via WebSocket if connected
                             try {
                                 val payload = WsPayload(
                                     id = msgId,
                                     channelName = channelName,
-                                    senderName = currentUser.displayName.ifBlank { "Member" },
-                                    senderAvatar = avatarInitial,
+                                    senderName = currentUser.displayName,
+                                    senderAvatar = currentAvatar,
                                     senderBadge = currentUser.roleBadge?.name ?: "Member",
-                                    content = messageText,
-                                    timestamp = "Baru saja"
+                                    content = textToSend,
+                                    timestamp = "Baru saja",
+                                    type = "CHAT"
                                 )
                                 webSocket?.send(gson.toJson(payload))
-                            } catch (ex: Exception) {
-                                Log.e("ChatScreen", "Error sending WebSocket message", ex)
+                            } catch (e: Exception) {
+                                Log.e("ChatScreen", "Failed to send WebSocket message", e)
                             }
-
-                            messageText = ""
                         }
                     },
-                    modifier = Modifier.background(PrimaryViolet, CircleShape)
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(PrimaryViolet, CircleShape)
                 ) {
-                    Icon(Icons.Default.Send, contentDescription = "Send", tint = TextPrimary)
+                    Icon(Icons.Default.Send, contentDescription = "Kirim Pesan", tint = Color.White)
                 }
             }
         },
@@ -330,16 +373,58 @@ fun ChatScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(messages) { msg ->
-                    ChatMessageBubble(msg)
+                items(items = messages, key = { it.id }) { msg ->
+                    ChatMessageBubble(
+                        msg = msg,
+                        isOwnerOrSelf = (msg.senderName == currentUser.displayName || msg.senderName.contains(currentUser.displayName, ignoreCase = true)),
+                        onDeleteClick = { messageToDelete = msg }
+                    )
                 }
             }
+        }
+
+        // Delete Confirmation Modal (CRUD Delete)
+        messageToDelete?.let { targetMsg ->
+            AlertDialog(
+                onDismissRequest = { messageToDelete = null },
+                containerColor = SurfaceCard,
+                icon = { Icon(Icons.Default.DeleteForever, contentDescription = null, tint = TertiaryCoral, modifier = Modifier.size(36.dp)) },
+                title = { Text("Hapus Pesan Ini?", color = TextPrimary, fontWeight = FontWeight.Bold) },
+                text = {
+                    Text(
+                        "Apakah kamu yakin ingin menghapus pesan \"${targetMsg.content.take(40)}\"? Pesan akan terhapus dari channel ini untuk semua orang.",
+                        color = TextMuted,
+                        fontSize = 13.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            deleteMessageLocallyAndRemote(targetMsg)
+                            messageToDelete = null
+                            Toast.makeText(context, "Pesan telah dihapus", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = TertiaryCoral)
+                    ) {
+                        Text("Hapus Pesan", color = TextPrimary, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { messageToDelete = null }) {
+                        Text("Batal", color = TextMuted)
+                    }
+                }
+            )
         }
     }
 }
 
 @Composable
-fun ChatMessageBubble(msg: ChatMessage) {
+fun ChatMessageBubble(
+    msg: ChatMessage,
+    isOwnerOrSelf: Boolean = false,
+    onDeleteClick: () -> Unit = {}
+) {
     Row(modifier = Modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
@@ -392,6 +477,22 @@ fun ChatMessageBubble(msg: ChatMessage) {
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(text = msg.timestamp.ifBlank { "Baru saja" }, color = TextMuted, fontSize = 10.sp)
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                if (isOwnerOrSelf) {
+                    IconButton(
+                        onClick = onDeleteClick,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Hapus Pesan",
+                            tint = TertiaryCoral.copy(alpha = 0.7f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(text = msg.content, color = TextPrimary, fontSize = 14.sp)
@@ -417,4 +518,3 @@ fun ChatMessageBubble(msg: ChatMessage) {
         }
     }
 }
-

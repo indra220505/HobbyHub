@@ -50,8 +50,18 @@ class ChatLocalDatabaseManager(context: Context) {
 
     fun saveMessageToChannel(channelName: String, newMessage: ChatMessage) {
         val currentMessages = getMessagesForChannel(channelName).toMutableList()
-        currentMessages.add(newMessage)
-        saveMessagesForChannel(channelName, currentMessages)
+        if (currentMessages.none { it.id == newMessage.id }) {
+            currentMessages.add(newMessage)
+            saveMessagesForChannel(channelName, currentMessages)
+        }
+    }
+
+    fun deleteMessageFromChannel(channelName: String, messageId: String) {
+        val currentMessages = getMessagesForChannel(channelName).toMutableList()
+        val removed = currentMessages.removeAll { it.id == messageId }
+        if (removed) {
+            saveMessagesForChannel(channelName, currentMessages)
+        }
     }
 
     private fun saveMessagesForChannel(channelName: String, messages: List<ChatMessage>) {
