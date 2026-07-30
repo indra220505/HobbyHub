@@ -72,8 +72,8 @@ class AuthService(
             throw IllegalArgumentException("Email belum diverifikasi. Silakan masukkan kode OTP yang telah dikirim ke email Anda.")
         }
 
-        val token = jwtTokenProvider.generateAccessToken(user.id!!, user.email, user.username)
-        val refreshToken = jwtTokenProvider.generateRefreshToken(user.id)
+        val token = jwtTokenProvider.generateAccessToken(user.id.toString(), user.email, user.username)
+        val refreshToken = jwtTokenProvider.generateRefreshToken(user.id.toString())
 
         return AuthResponse(token, refreshToken, toUserDto(user))
     }
@@ -89,8 +89,8 @@ class AuthService(
             ?: throw IllegalArgumentException("Pengguna tidak ditemukan.")
 
         if (user.isVerified) {
-            val token = jwtTokenProvider.generateAccessToken(user.id!!, user.email, user.username)
-            val refreshToken = jwtTokenProvider.generateRefreshToken(user.id)
+            val token = jwtTokenProvider.generateAccessToken(user.id.toString(), user.email, user.username)
+            val refreshToken = jwtTokenProvider.generateRefreshToken(user.id.toString())
             return AuthResponse(token, refreshToken, toUserDto(user))
         }
 
@@ -124,8 +124,8 @@ class AuthService(
             ?: throw IllegalArgumentException("Pengguna dengan email '$emailClean' tidak ditemukan.")
 
         if (user.isVerified) {
-            val token = jwtTokenProvider.generateAccessToken(user.id!!, user.email, user.username)
-            val refreshToken = jwtTokenProvider.generateRefreshToken(user.id)
+            val token = jwtTokenProvider.generateAccessToken(user.id.toString(), user.email, user.username)
+            val refreshToken = jwtTokenProvider.generateRefreshToken(user.id.toString())
             return AuthResponse(token, refreshToken, toUserDto(user))
         }
 
