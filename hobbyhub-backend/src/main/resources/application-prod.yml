@@ -2,6 +2,9 @@ spring:
   datasource:
     url: ${DATABASE_URL}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      connection-timeout: 20000
 
   jpa:
     hibernate:
@@ -20,16 +23,16 @@ server:
 
 jwt:
   secret: ${JWT_SECRET}
-  expiration-ms: 86400000 # 24 Hours
-  refresh-expiration-ms: 604800000 # 7 Days
+  expiration-ms: 86400000
+  refresh-expiration-ms: 604800000
 
 cloud:
   aws:
     credentials:
-      access-key: ${S3_ACCESS_KEY}
-      secret-key: ${S3_SECRET_KEY}
+      access-key: ${S3_ACCESS_KEY:none}
+      secret-key: ${S3_SECRET_KEY:none}
     region:
       static: ${S3_REGION:us-east-1}
     s3:
-      endpoint: ${S3_ENDPOINT}
-      bucket-name: ${S3_BUCKET_NAME}
+      endpoint: ${S3_ENDPOINT:none}
+      bucket-name: ${S3_BUCKET_NAME:hobbyhub-media}
