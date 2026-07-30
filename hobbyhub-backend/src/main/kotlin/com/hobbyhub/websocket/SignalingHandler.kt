@@ -43,12 +43,29 @@ class SignalingHandler(
 
     private fun handleJoin(session: WebSocketSession, msg: SignalingMessage) {
         val room = rooms.computeIfAbsent(msg.roomId) { ConcurrentHashMap() }
+        
+        // 1. Send existing users in the room to the joining user first
+        room.forEach { (existingUserId, existingSession) ->
+            if (existingUserId != msg.senderId && existingSession.isOpen) {
+                val existingUserMsg = SignalingMessage(
+                    type = "JOIN",
+                    senderId = existingUserId,
+                    roomId = msg.roomId
+                )
+                try {
+                    session.sendMessage(TextMessage(objectMapper.writeValueAsString(existingUserMsg)))
+                } catch (e: Exception) {
+                    log.error("Failed to send existing user $existingUserId to ${msg.senderId}", e)
+                }
+            }
+        }
+
         room[msg.senderId] = session
         sessionInfo[session.id] = Pair(msg.roomId, msg.senderId)
         
         log.info("User ${msg.senderId} joined room ${msg.roomId}")
 
-        // Broadcast to others that a user joined
+        // 2. Broadcast to others that a user joined
         broadcastToRoom(msg.roomId, msg, excludeUserId = msg.senderId)
     }
 
