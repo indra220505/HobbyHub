@@ -1,5 +1,7 @@
 package com.hobbyhub.ui.screens
 
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -21,22 +23,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.hobbyhub.BuildConfig
 import com.hobbyhub.data.local.ChatLocalDatabaseManager
 import com.hobbyhub.data.local.UserSessionManager
 import com.hobbyhub.model.ChatMessage
 import com.hobbyhub.model.RoleBadge
 import com.hobbyhub.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import okhttp3.*
+import java.io.IOException
 
 data class WsPayload(
-    val id: String,
-    val channelName: String,
-    val senderName: String,
-    val senderAvatar: String,
-    val senderBadge: String,
-    val content: String,
-    val timestamp: String
+    val id: String = "",
+    val channelName: String = "",
+    val senderName: String = "",
+    val senderAvatar: String = "U",
+    val senderBadge: String = "Member",
+    val content: String = "",
+    val timestamp: String = "Baru saja"
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,10 +56,54 @@ fun ChatScreen(
     val sessionManager = remember { UserSessionManager(context) }
     val currentUser = remember { sessionManager.getUser() }
     val gson = remember { Gson() }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val coroutineScope = rememberCoroutineScope()
 
     var messageText by remember { mutableStateOf("") }
     val messages = remember { mutableStateListOf(*chatDb.getMessagesForChannel(channelName).toTypedArray()) }
     var webSocket by remember { mutableStateOf<WebSocket?>(null) }
+    var isConnected by remember { mutableStateOf(false) }
+
+    // Fetch initial chat history from Railway REST API
+    LaunchedEffect(channelName) {
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val httpUrl = BuildConfig.API_BASE_URL + "api/chat/history/" + channelName
+                val client = OkHttpClient()
+                val request = Request.Builder().url(httpUrl).build()
+                client.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        Log.e("ChatScreen", "Failed to fetch chat history", e)
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        response.body?.string()?.let { json ->
+                            val listType = object : TypeToken<List<WsPayload>>() {}.type
+                            val remoteHistory: List<WsPayload> = gson.fromJson(json, listType) ?: emptyList()
+                            mainHandler.post {
+                                remoteHistory.forEach { item ->
+                                    val msg = ChatMessage(
+                                        id = item.id,
+                                        senderName = item.senderName,
+                                        senderAvatar = item.senderAvatar,
+                                        senderBadge = RoleBadge(item.senderBadge, "#6C5CE7"),
+                                        content = item.content,
+                                        timestamp = item.timestamp
+                                    )
+                                    if (messages.none { it.id == msg.id }) {
+                                        messages.add(msg)
+                                        chatDb.saveMessageToChannel(channelName, msg)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                Log.e("ChatScreen", "Error fetching history", e)
+            }
+        }
+    }
 
     // Connect to WebSocket /chat when entering screen
     DisposableEffect(channelName) {
@@ -64,12 +114,14 @@ fun ChatScreen(
         val ws = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) {
                 Log.d("ChatScreen", "Connected to Chat WebSocket: $wsUrl")
+                mainHandler.post { isConnected = true }
             }
 
             override fun onMessage(ws: WebSocket, text: String) {
                 try {
+                    Log.d("ChatScreen", "WebSocket message received: $text")
                     val payload = gson.fromJson(text, WsPayload::class.java)
-                    if (payload.channelName.equals(channelName, ignoreCase = true)) {
+                    if (payload != null && payload.channelName.equals(channelName, ignoreCase = true)) {
                         val newMsg = ChatMessage(
                             id = payload.id,
                             senderName = payload.senderName,
@@ -78,10 +130,13 @@ fun ChatScreen(
                             content = payload.content,
                             timestamp = payload.timestamp
                         )
-                        // Add to UI list if not already present
-                        if (messages.none { it.id == newMsg.id }) {
-                            messages.add(newMsg)
-                            chatDb.saveMessageToChannel(channelName, newMsg)
+
+                        // CRITICAL: Post to Main Thread for Compose Recomposition!
+                        mainHandler.post {
+                            if (messages.none { it.id == newMsg.id }) {
+                                messages.add(newMsg)
+                                chatDb.saveMessageToChannel(channelName, newMsg)
+                            }
                         }
                     }
                 } catch (e: Exception) {
@@ -91,6 +146,11 @@ fun ChatScreen(
 
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
                 Log.e("ChatScreen", "Chat WebSocket error", t)
+                mainHandler.post { isConnected = false }
+            }
+
+            override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                mainHandler.post { isConnected = false }
             }
         })
 
@@ -109,12 +169,12 @@ fun ChatScreen(
                         Text(text = "# $channelName", color = TextPrimary, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(
-                            color = SecondaryTurquoise.copy(alpha = 0.2f),
+                            color = if (isConnected) SecondaryTurquoise.copy(alpha = 0.2f) else TertiaryCoral.copy(alpha = 0.2f),
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
-                                text = "ONLINE",
-                                color = SecondaryTurquoise,
+                                text = if (isConnected) "ONLINE" else "CONNECTING...",
+                                color = if (isConnected) SecondaryTurquoise else TertiaryCoral,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -175,9 +235,11 @@ fun ChatScreen(
                                 timestamp = "Baru saja"
                             )
 
-                            // Add locally
-                            messages.add(newMsg)
-                            chatDb.saveMessageToChannel(channelName, newMsg)
+                            // Add locally on Main thread
+                            if (messages.none { it.id == newMsg.id }) {
+                                messages.add(newMsg)
+                                chatDb.saveMessageToChannel(channelName, newMsg)
+                            }
 
                             // Send via WebSocket broadcast
                             val payload = WsPayload(
