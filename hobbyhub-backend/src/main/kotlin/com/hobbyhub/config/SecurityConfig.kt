@@ -30,7 +30,17 @@ class SecurityConfig(
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .headers { headers -> headers.frameOptions { it.disable() } }
             .authorizeHttpRequests { auth ->
-                auth.requestMatchers("/api/v1/auth/**", "/api/auth/**", "/error", "/actuator/health/**").permitAll()
+                auth.requestMatchers(
+                    "/api/v1/auth/**",
+                    "/api/auth/**",
+                    "/api/chat/**",
+                    "/chat/**",
+                    "/chat",
+                    "/signaling/**",
+                    "/signaling",
+                    "/error",
+                    "/actuator/health/**"
+                ).permitAll()
                     .anyRequest().authenticated()
             }
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter::class.java)
