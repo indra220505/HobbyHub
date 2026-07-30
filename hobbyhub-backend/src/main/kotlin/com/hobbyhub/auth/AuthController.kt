@@ -26,4 +26,16 @@ class AuthController(
         val response = authService.verifyEmail(request)
         return ResponseEntity.ok(response)
     }
+
+    @PostMapping("/verify-otp")
+    fun verifyOtp(@RequestBody request: VerifyEmailRequest): ResponseEntity<AuthResponse> {
+        val response = authService.verifyEmail(request)
+        return ResponseEntity.ok(response)
+    }
+
+    @PostMapping("/resend-otp")
+    fun resendOtp(@RequestBody request: ResendOtpRequest): ResponseEntity<AuthResponse> {
+        val response = authService.resendOtp(request)
+        return ResponseEntity.ok(response)
+    }
 }

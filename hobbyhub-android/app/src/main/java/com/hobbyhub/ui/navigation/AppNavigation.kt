@@ -147,7 +147,13 @@ fun AppNavigation() {
                                 currentScreen = "email_verification"
                             }
                         },
-                        onNavigateToRegister = { currentScreen = "register" }
+                        onNavigateToRegister = { currentScreen = "register" },
+                        onNavigateToVerification = { targetEmail ->
+                            if (targetEmail.isNotBlank()) {
+                                pendingEmail = targetEmail
+                            }
+                            currentScreen = "email_verification"
+                        }
                     )
                 }
                 "register" -> {

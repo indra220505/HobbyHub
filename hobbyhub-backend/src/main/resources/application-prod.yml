@@ -27,6 +27,22 @@ spring:
     connect-retries: 10               # Retry maksimal 10x jika koneksi DB gagal
     connect-retries-interval: 5       # Jeda retry 5 detik (total = 50 detik nunggu DB bangun)
 
+  mail:
+    host: ${SPRING_MAIL_HOST:smtp.gmail.com}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:hobbyhub.auth@gmail.com}
+    password: ${SPRING_MAIL_PASSWORD:none}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
 
 server:
   port: ${PORT:8080}

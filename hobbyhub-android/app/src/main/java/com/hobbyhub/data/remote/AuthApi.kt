@@ -21,6 +21,10 @@ data class VerifyEmailRequest(
     val code: String
 )
 
+data class ResendOtpRequest(
+    val email: String
+)
+
 data class UserDto(
     val id: String,
     val email: String,
@@ -45,4 +49,10 @@ interface AuthApi {
 
     @POST("/api/v1/auth/verify-email")
     suspend fun verifyEmail(@Body request: VerifyEmailRequest): Response<AuthResponse>
+
+    @POST("/api/v1/auth/verify-otp")
+    suspend fun verifyOtp(@Body request: VerifyEmailRequest): Response<AuthResponse>
+
+    @POST("/api/v1/auth/resend-otp")
+    suspend fun resendOtp(@Body request: ResendOtpRequest): Response<AuthResponse>
 }

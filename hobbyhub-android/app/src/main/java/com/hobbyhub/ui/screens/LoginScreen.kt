@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,7 +30,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun LoginScreen(
     onLoginSuccess: (response: AuthResponse) -> Unit,
-    onNavigateToRegister: () -> Unit
+    onNavigateToRegister: () -> Unit,
+    onNavigateToVerification: (email: String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -38,6 +40,7 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isUnverifiedEmail by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
 
     Column(
@@ -60,12 +63,16 @@ fun LoginScreen(
             fontSize = 14.sp
         )
 
-        Spacer(modifier = Modifier.height(36.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
         // Email Field
         OutlinedTextField(
             value = email,
-            onValueChange = { email = it; errorMessage = null },
+            onValueChange = { 
+                email = it
+                errorMessage = null 
+                isUnverifiedEmail = false
+            },
             label = { Text("Email", color = TextMuted) },
             leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = PrimaryViolet) },
             modifier = Modifier.fillMaxWidth(),
@@ -84,14 +91,18 @@ fun LoginScreen(
         // Password Field
         OutlinedTextField(
             value = password,
-            onValueChange = { password = it; errorMessage = null },
+            onValueChange = { 
+                password = it
+                errorMessage = null 
+                isUnverifiedEmail = false
+            },
             label = { Text("Password", color = TextMuted) },
             leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = PrimaryViolet) },
             trailingIcon = {
                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
                     Icon(
                         imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                        contentDescription = null,
+                        contentDescription = if (passwordVisible) "Hide password" else "Show password",
                         tint = TextMuted
                     )
                 }
@@ -109,13 +120,26 @@ fun LoginScreen(
         )
 
         errorMessage?.let { err ->
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             Text(text = err, color = TertiaryCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        }
+
+        if (isUnverifiedEmail) {
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = { onNavigateToVerification(email.trim().lowercase()) },
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = SecondaryTurquoise),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Verified, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Verifikasi Kode OTP Sekarang ➔", fontWeight = FontWeight.Bold)
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Login Button
         Button(
             onClick = {
                 val trimmedEmail = email.trim()
@@ -129,6 +153,7 @@ fun LoginScreen(
                     else -> {
                         isLoading = true
                         errorMessage = null
+                        isUnverifiedEmail = false
                         coroutineScope.launch {
                             try {
                                 val api = NetworkModule.getAuthApi(context)
@@ -136,7 +161,13 @@ fun LoginScreen(
                                 if (response.isSuccessful && response.body() != null) {
                                     onLoginSuccess(response.body()!!)
                                 } else {
-                                    errorMessage = "Gagal login: Kredensial salah atau email belum diverifikasi."
+                                    val errStr = response.errorBody()?.string() ?: ""
+                                    if (errStr.contains("verifikasi", ignoreCase = true) || errStr.contains("unverified", ignoreCase = true)) {
+                                        errorMessage = "Email Anda belum diverifikasi! Silakan verifikasi OTP."
+                                        isUnverifiedEmail = true
+                                    } else {
+                                        errorMessage = "Gagal login: Email tidak terdaftar atau kata sandi salah."
+                                    }
                                 }
                             } catch (e: Exception) {
                                 errorMessage = "Terjadi kesalahan jaringan: ${e.message}"

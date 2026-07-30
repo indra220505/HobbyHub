@@ -1,7 +1,6 @@
 package com.hobbyhub.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -18,6 +17,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hobbyhub.data.remote.NetworkModule
+import com.hobbyhub.data.remote.ResendOtpRequest
 import com.hobbyhub.data.remote.VerifyEmailRequest
 import com.hobbyhub.ui.theme.*
 import kotlinx.coroutines.delay
@@ -39,7 +39,7 @@ fun EmailVerificationScreen(
     var cooldownSeconds by remember { mutableIntStateOf(60) }
     var isLoading by remember { mutableStateOf(false) }
 
-    // Cooldown timer
+    // Cooldown timer (60s)
     LaunchedEffect(Unit) {
         while (cooldownSeconds > 0) {
             delay(1000)
@@ -67,7 +67,7 @@ fun EmailVerificationScreen(
         Spacer(modifier = Modifier.height(20.dp))
 
         Text(
-            text = "Verifikasi Email",
+            text = "Verifikasi Email (OTP)",
             color = TextPrimary,
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold
@@ -76,7 +76,7 @@ fun EmailVerificationScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Masukkan kode 6-digit yang dikirim ke",
+            text = "Kode verifikasi 6 digit telah dikirim ke:",
             color = TextMuted,
             fontSize = 14.sp,
             textAlign = TextAlign.Center
@@ -84,7 +84,7 @@ fun EmailVerificationScreen(
         Text(
             text = email,
             color = SecondaryTurquoise,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
         )
@@ -94,14 +94,14 @@ fun EmailVerificationScreen(
         // OTP Input Field
         OutlinedTextField(
             value = otpInput,
-            onValueChange = {
-                if (it.length <= 6 && it.all { c -> c.isDigit() }) {
-                    otpInput = it
+            onValueChange = { input ->
+                if (input.length <= 6 && input.all { c -> c.isDigit() }) {
+                    otpInput = input
                     errorMessage = null
                     successMessage = null
                 }
             },
-            label = { Text("Kode Verifikasi (6 digit)", color = TextMuted) },
+            label = { Text("Kode OTP 6 Digit", color = TextMuted) },
             leadingIcon = { Icon(Icons.Default.Pin, contentDescription = null, tint = PrimaryViolet) },
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -117,12 +117,12 @@ fun EmailVerificationScreen(
 
         // Error / Success Messages
         errorMessage?.let { err ->
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(text = err, color = TertiaryCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(text = err, color = TertiaryCoral, fontSize = 13.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         }
         successMessage?.let { msg ->
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(text = msg, color = SecondaryTurquoise, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(text = msg, color = SecondaryTurquoise, fontSize = 13.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -131,23 +131,23 @@ fun EmailVerificationScreen(
         Button(
             onClick = {
                 if (otpInput.length != 6) {
-                    errorMessage = "Masukkan kode 6 digit!"
+                    errorMessage = "Harap masukkan 6 digit kode OTP!"
                 } else {
                     isLoading = true
                     errorMessage = null
                     scope.launch {
                         try {
                             val api = NetworkModule.getAuthApi(context)
-                            val response = api.verifyEmail(VerifyEmailRequest(email, otpInput))
-                            if (response.isSuccessful) {
-                                successMessage = "Email berhasil diverifikasi! ✓"
-                                delay(1000)
+                            val response = api.verifyOtp(VerifyEmailRequest(email.trim(), otpInput.trim()))
+                            if (response.isSuccessful && response.body() != null) {
+                                successMessage = "Verifikasi Berhasil! Selamat datang ✓"
+                                delay(800)
                                 onVerificationSuccess()
                             } else {
-                                errorMessage = "Kode verifikasi salah atau sudah kedaluwarsa!"
+                                errorMessage = "Kode OTP salah atau sudah kedaluwarsa!"
                             }
                         } catch (e: Exception) {
-                            errorMessage = "Kesalahan jaringan: ${e.message}"
+                            errorMessage = "Terjadi kesalahan jaringan: ${e.message}"
                         } finally {
                             isLoading = false
                         }
@@ -166,32 +166,40 @@ fun EmailVerificationScreen(
             } else {
                 Icon(Icons.Default.Verified, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Verifikasi Email", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text("Verifikasi & Masuk", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-        // Resend Button with Cooldown
+        // Resend OTP Button with 60s Cooldown
         OutlinedButton(
             onClick = {
                 if (canResend) {
-                    // MOCK RESEND FOR NOW (To be integrated with real backend)
-                    successMessage = "Kode verifikasi baru berhasil dikirim (Mock)!"
+                    isLoading = true
                     errorMessage = null
-                    otpInput = ""
-                    canResend = false
-                    cooldownSeconds = 60
+                    successMessage = null
                     scope.launch {
-                        while (cooldownSeconds > 0) {
-                            delay(1000)
-                            cooldownSeconds--
+                        try {
+                            val api = NetworkModule.getAuthApi(context)
+                            val response = api.resendOtp(ResendOtpRequest(email.trim()))
+                            if (response.isSuccessful) {
+                                successMessage = "Kode OTP baru telah dikirim ke email Anda!"
+                                otpInput = ""
+                                canResend = false
+                                cooldownSeconds = 60
+                            } else {
+                                errorMessage = "Gagal mengirim ulang OTP. Silakan coba beberapa saat lagi."
+                            }
+                        } catch (e: Exception) {
+                            errorMessage = "Kesalahan jaringan: ${e.message}"
+                        } finally {
+                            isLoading = false
                         }
-                        canResend = true
                     }
                 }
             },
-            enabled = canResend,
+            enabled = canResend && !isLoading,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp)
         ) {
@@ -202,7 +210,7 @@ fun EmailVerificationScreen(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = if (canResend) "Kirim Ulang Kode Verifikasi" else "Kirim Ulang (${cooldownSeconds}s)",
+                text = if (canResend) "Kirim Ulang Kode OTP" else "Kirim Ulang OTP (${cooldownSeconds}s)",
                 color = if (canResend) SecondaryTurquoise else TextMuted,
                 fontSize = 14.sp
             )
@@ -212,7 +220,7 @@ fun EmailVerificationScreen(
 
         // Back to Login
         TextButton(onClick = onBackToLogin) {
-            Text("← Kembali ke halaman Login", color = TextMuted, fontSize = 14.sp)
+            Text("← Kembali ke Halaman Login", color = TextMuted, fontSize = 14.sp)
         }
     }
 }
