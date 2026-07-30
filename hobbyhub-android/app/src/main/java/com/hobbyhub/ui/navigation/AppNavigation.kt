@@ -463,9 +463,9 @@ fun AppNavigation() {
                         onDeleteAccountClick = {
                             coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                                 try {
-                                    val token = sessionManager.getAccessToken()
+                                    val token = sessionManager.getJwtToken()
                                     if (token != null) {
-                                        val httpUrl = com.hobbyhub.BuildConfig.API_BASE_URL + "api/users/me"
+                                        val httpUrl = com.hobbyhub.BuildConfig.API_BASE_URL + "api/v1/users/me"
                                         val client = okhttp3.OkHttpClient.Builder().build()
                                         val request = okhttp3.Request.Builder()
                                             .url(httpUrl)

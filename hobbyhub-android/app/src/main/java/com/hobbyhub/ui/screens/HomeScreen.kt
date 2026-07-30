@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.sp
 import com.hobbyhub.data.local.CommunityRegistryManager
 import com.hobbyhub.data.local.UserSessionManager
 import com.hobbyhub.model.Community
-import com.hobbyhub.model.Community
 import com.hobbyhub.ui.theme.*
 import com.hobbyhub.data.remote.NetworkModule
 import kotlinx.coroutines.launch
