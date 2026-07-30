@@ -48,13 +48,33 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) {
         try {
+            val serverCommsResp = withContext(Dispatchers.IO) { communityApi.getAllCommunities() }
+            if (serverCommsResp.isSuccessful) {
+                serverCommsResp.body()?.let { remoteList ->
+                    val mappedList = remoteList.map { r ->
+                        Community(
+                            id = r.id,
+                            name = r.name,
+                            slug = r.slug,
+                            category = r.category,
+                            memberCount = "${r.memberCount} Member",
+                            description = r.description,
+                            iconEmoji = r.iconEmoji.ifBlank { "🌐" },
+                            channels = listOf(
+                                Channel("ch_gen_${r.id}", "general", ChannelType.TEXT_CHAT, "Channel umum"),
+                                Channel("ch_voice_${r.id}", "🔊 Voice Lounge", ChannelType.VOICE, "Voice room")
+                            )
+                        )
+                    }
+                    val combined = (mappedList + commDb.getAllCommunities()).distinctBy { it.id }
+                    allCommunities = combined
+                }
+            }
+
             val response = withContext(Dispatchers.IO) { communityApi.getJoinedCommunities() }
             if (response.isSuccessful) {
                 response.body()?.let { serverJoined ->
-                    // Update local cache
                     serverJoined.forEach { sessionManager.joinCommunity(it) }
-                    // If local cache had items not on server, maybe remove them? 
-                    // Let's just override it to sync exactly with server.
                     sessionManager.setJoinedCommunityIds(serverJoined)
                     joinedIds = serverJoined
                 }
@@ -274,13 +294,53 @@ fun HomeScreen(
             CreateCommunityDialog(
                 onDismiss = { showCreateDialog = false },
                 onCreate = { name, category, desc, emoji, isPublic ->
-                    val newComm = commDb.createCommunity(currentUser.username, name, category, desc, emoji, isPublic)
-                    sessionManager.joinCommunity(newComm.id) // Creator automatically joins their own community
-                    allCommunities = commDb.getAllCommunities()
-                    joinedIds = sessionManager.getJoinedCommunityIds()
-                    showCreateDialog = false
-                    Toast.makeText(context, "Komunitas ${newComm.name} berhasil dibuat!", Toast.LENGTH_SHORT).show()
-                    onCommunityClick(newComm)
+                    coroutineScope.launch {
+                        try {
+                            val localComm = commDb.createCommunity(currentUser.username, name, category, desc, emoji, isPublic)
+                            sessionManager.joinCommunity(localComm.id)
+
+                            val payload = com.hobbyhub.data.remote.CreateCommunityPayload(
+                                name = name,
+                                category = category,
+                                description = desc,
+                                iconEmoji = emoji,
+                                isPublic = isPublic
+                            )
+                            withContext(Dispatchers.IO) { communityApi.createCommunity(payload) }
+
+                            // Refresh global list from server so custom category appears everywhere
+                            val serverCommsResp = withContext(Dispatchers.IO) { communityApi.getAllCommunities() }
+                            if (serverCommsResp.isSuccessful && serverCommsResp.body() != null) {
+                                val mappedList = serverCommsResp.body()!!.map { r ->
+                                    Community(
+                                        id = r.id,
+                                        name = r.name,
+                                        slug = r.slug,
+                                        category = r.category,
+                                        memberCount = "${r.memberCount} Member",
+                                        description = r.description,
+                                        iconEmoji = r.iconEmoji.ifBlank { "🌐" },
+                                        channels = listOf(
+                                            Channel("ch_gen_${r.id}", "general", ChannelType.TEXT_CHAT, "Channel umum"),
+                                            Channel("ch_voice_${r.id}", "🔊 Voice Lounge", ChannelType.VOICE, "Voice room")
+                                        )
+                                    )
+                                }
+                                allCommunities = (mappedList + commDb.getAllCommunities()).distinctBy { it.id }
+                            } else {
+                                allCommunities = commDb.getAllCommunities()
+                            }
+                            joinedIds = sessionManager.getJoinedCommunityIds()
+                            showCreateDialog = false
+                            Toast.makeText(context, "Komunitas '$name' ($category) berhasil dibuat!", Toast.LENGTH_SHORT).show()
+                            onCommunityClick(localComm)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            val localComm = commDb.createCommunity(currentUser.username, name, category, desc, emoji, isPublic)
+                            showCreateDialog = false
+                            onCommunityClick(localComm)
+                        }
+                    }
                 }
             )
         }
@@ -350,7 +410,7 @@ fun CreateCommunityDialog(
     var emoji by remember { mutableStateOf("🚀") }
     var isPublic by remember { mutableStateOf(true) }
 
-    val categoryList = listOf("Programming", "AI / ML", "Gaming", "Fotografi", "Trading", "Music")
+    val categoryList = listOf("Programming", "AI / ML", "Gaming", "Fotografi", "Trading", "Music", "Anime", "Robotik")
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -379,12 +439,20 @@ fun CreateCommunityDialog(
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PrimaryViolet, unfocusedBorderColor = BorderDark, focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary)
                 )
 
-                // KATEGORI HOBI SELECTOR CHIPS (Diperbarui agar dapat dipilih)
-                Text(text = "Kategori Hobi:", color = TextMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                // Custom Category Freeform Input Field
+                OutlinedTextField(
+                    value = category,
+                    onValueChange = { category = it },
+                    label = { Text("Kategori Hobi (Ketik Kustom / Pilih Chip Bawah)", color = TextMuted) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PrimaryViolet, unfocusedBorderColor = BorderDark, focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary)
+                )
+
+                Text(text = "Rekomendasi / Pilihan Cepat Kategori:", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(categoryList) { cat ->
                         FilterChip(
-                            selected = category == cat,
+                            selected = category.equals(cat, ignoreCase = true),
                             onClick = { category = cat },
                             label = { Text(cat, fontSize = 12.sp) },
                             colors = FilterChipDefaults.filterChipColors(

@@ -68,10 +68,15 @@ fun CommunityDetailScreen(
                 },
                 actions = {
                     IconButton(onClick = {
-                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        val clip = android.content.ClipData.newPlainText("Link Komunitas", "hobbyhub://community/${currentCommunity.id}")
-                        clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, "Link komunitas disalin: hobbyhub://community/${currentCommunity.id}", Toast.LENGTH_LONG).show()
+                        val shareUrl = "https://hobbyhub-production.up.railway.app/community/${currentCommunity.id}"
+                        val shareText = "Bergabunglah dengan komunitas '${currentCommunity.name}' di HobbyHub!\n$shareUrl"
+                        val sendIntent = android.content.Intent().apply {
+                            action = android.content.Intent.ACTION_SEND
+                            putExtra(android.content.Intent.EXTRA_TEXT, shareText)
+                            type = "text/plain"
+                        }
+                        val shareIntent = android.content.Intent.createChooser(sendIntent, "Bagikan Link Komunitas")
+                        context.startActivity(shareIntent)
                     }) {
                         Icon(Icons.Default.Share, contentDescription = "Salin Link Komunitas", tint = SecondaryTurquoise)
                     }
