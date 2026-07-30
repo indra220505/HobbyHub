@@ -184,6 +184,15 @@ class WebRtcClient(
     }
 
     fun handleUserJoined(targetUserId: String) {
+        // PERFECT NEGOTIATOR / POLITENESS PATTERN:
+        // Avoid WebRTC Glare by having ONLY the peer with lexicographically smaller ID create the OFFER!
+        val isOfferer = userId < targetUserId
+        if (!isOfferer) {
+            Log.d(TAG, "Polite peer ($userId > $targetUserId): Waiting for offer from $targetUserId")
+            return
+        }
+
+        Log.d(TAG, "Impolite peer ($userId < $targetUserId): Creating offer for $targetUserId")
         val peerConnection = getOrCreatePeerConnection(targetUserId) ?: return
 
         val constraints = MediaConstraints()
@@ -200,6 +209,7 @@ class WebRtcClient(
     }
 
     fun handleOfferReceived(senderId: String, sdp: String) {
+        Log.d(TAG, "Handling Offer from $senderId")
         val peerConnection = getOrCreatePeerConnection(senderId) ?: return
         val sessionDescription = SessionDescription(SessionDescription.Type.OFFER, sdp)
         
@@ -221,6 +231,7 @@ class WebRtcClient(
     }
 
     fun handleAnswerReceived(senderId: String, sdp: String) {
+        Log.d(TAG, "Handling Answer from $senderId")
         val peerConnection = peerConnections[senderId] ?: return
         val sessionDescription = SessionDescription(SessionDescription.Type.ANSWER, sdp)
         peerConnection.setRemoteDescription(SdpObserverAdapter(), sessionDescription)

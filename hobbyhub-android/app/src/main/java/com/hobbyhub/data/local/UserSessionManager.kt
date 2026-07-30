@@ -131,11 +131,14 @@ class UserSessionManager(context: Context) {
         val level = prefs.getInt(KEY_LEVEL, 1)
         val xp = prefs.getLong(KEY_CURRENT_XP, 0L)
 
-        val isSuperOwner = isSuperOwnerSession()
-        val roleBadge = if (isSuperOwner) RoleBadge("Super Owner 👑", "#FF7675") else RoleBadge("Member", "#00CEC9")
+        val userId = prefs.getString(KEY_USER_ID, null) ?: run {
+            val generated = "usr_${System.currentTimeMillis()}"
+            prefs.edit().putString(KEY_USER_ID, generated).apply()
+            generated
+        }
 
         return User(
-            id = prefs.getString(KEY_USER_ID, "usr_${System.currentTimeMillis()}") ?: "usr_member",
+            id = userId,
             username = username,
             displayName = displayName,
             avatarUrl = "",
