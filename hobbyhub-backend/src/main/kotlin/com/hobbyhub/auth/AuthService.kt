@@ -52,8 +52,8 @@ class AuthService(
         // Send OTP email via SMTP / EmailService
         emailService.sendOtpEmail(savedUser.email, otpCode)
 
-        val token = jwtTokenProvider.generateAccessToken(savedUser.id!!, savedUser.email, savedUser.username)
-        val refreshToken = jwtTokenProvider.generateRefreshToken(savedUser.id)
+        val token = jwtTokenProvider.generateAccessToken(savedUser.id.toString(), savedUser.email, savedUser.username)
+        val refreshToken = jwtTokenProvider.generateRefreshToken(savedUser.id.toString())
 
         return AuthResponse(token, refreshToken, toUserDto(savedUser))
     }
@@ -107,8 +107,8 @@ class AuthService(
         user.verificationExpiry = null
         val savedUser = userRepository.save(user)
 
-        val token = jwtTokenProvider.generateAccessToken(savedUser.id!!, savedUser.email, savedUser.username)
-        val refreshToken = jwtTokenProvider.generateRefreshToken(savedUser.id)
+        val token = jwtTokenProvider.generateAccessToken(savedUser.id.toString(), savedUser.email, savedUser.username)
+        val refreshToken = jwtTokenProvider.generateRefreshToken(savedUser.id.toString())
 
         return AuthResponse(token, refreshToken, toUserDto(savedUser))
     }
@@ -139,8 +139,8 @@ class AuthService(
         // Send new OTP email via SMTP / EmailService
         emailService.sendOtpEmail(savedUser.email, newOtpCode)
 
-        val token = jwtTokenProvider.generateAccessToken(savedUser.id!!, savedUser.email, savedUser.username)
-        val refreshToken = jwtTokenProvider.generateRefreshToken(savedUser.id)
+        val token = jwtTokenProvider.generateAccessToken(savedUser.id.toString(), savedUser.email, savedUser.username)
+        val refreshToken = jwtTokenProvider.generateRefreshToken(savedUser.id.toString())
 
         return AuthResponse(token, refreshToken, toUserDto(savedUser))
     }
