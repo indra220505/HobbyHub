@@ -210,13 +210,16 @@ fun AppNavigation() {
                                         currentScreen = "email_verification"
                                     } else {
                                         val errStr = response.errorBody()?.string() ?: ""
-                                        android.widget.Toast.makeText(context, "Pendaftaran: ${if (errStr.contains("already")) "Email/Username sudah terdaftar!" else "Memverifikasi akun..."}", android.widget.Toast.LENGTH_LONG).show()
-                                        currentScreen = "email_verification"
+                                        val message = try {
+                                            org.json.JSONObject(errStr).optString("message", "Gagal mendaftar. Silakan coba lagi.")
+                                        } catch (_: Exception) {
+                                            "Gagal mendaftar. Silakan periksa koneksi internet Anda."
+                                        }
+                                        android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
                                     }
                                 } catch (e: Exception) {
                                     e.printStackTrace()
-                                    android.widget.Toast.makeText(context, "Koneksi backend: Membuka layar verifikasi OTP...", android.widget.Toast.LENGTH_SHORT).show()
-                                    currentScreen = "email_verification"
+                                    android.widget.Toast.makeText(context, "Gagal terhubung ke server: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                                 }
                             }
                         }

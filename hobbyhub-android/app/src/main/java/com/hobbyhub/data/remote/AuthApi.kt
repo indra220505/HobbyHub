@@ -2,7 +2,14 @@ package com.hobbyhub.data.remote
 
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Query
+
+data class CheckAvailabilityResponse(
+    val available: Boolean,
+    val message: String
+)
 
 data class RegisterRequest(
     val email: String,
@@ -40,6 +47,12 @@ data class AuthResponse(
 )
 
 interface AuthApi {
+
+    @GET("/api/v1/auth/check-email")
+    suspend fun checkEmail(@Query("email") email: String): Response<CheckAvailabilityResponse>
+
+    @GET("/api/v1/auth/check-username")
+    suspend fun checkUsername(@Query("username") username: String): Response<CheckAvailabilityResponse>
 
     @POST("/api/v1/auth/register")
     suspend fun register(@Body request: RegisterRequest): Response<AuthResponse>
