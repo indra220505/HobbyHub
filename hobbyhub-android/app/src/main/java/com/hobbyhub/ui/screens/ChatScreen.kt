@@ -367,7 +367,7 @@ fun ChatMessageBubble(msg: ChatMessage) {
                 msg.senderBadge?.let { badge ->
                     val badgeColor = remember(badge.colorHex) {
                         try {
-                            if (!badge.colorHex.isNull meOrBlank() && badge.colorHex.startsWith("#")) {
+                            if (!badge.colorHex.isNullOrBlank() && badge.colorHex.startsWith("#")) {
                                 Color(android.graphics.Color.parseColor(badge.colorHex))
                             } else {
                                 SecondaryTurquoise
@@ -418,4 +418,3 @@ fun ChatMessageBubble(msg: ChatMessage) {
     }
 }
 
-private fun String?.isNull meOrBlank(): Boolean = this == null || this.trim().isEmpty()
