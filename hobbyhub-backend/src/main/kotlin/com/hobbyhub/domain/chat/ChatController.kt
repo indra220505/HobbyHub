@@ -16,4 +16,17 @@ class ChatController(
         val history = chatHandler.getHistory(channelName)
         return ResponseEntity.ok(history)
     }
+
+    @DeleteMapping("/history/{channelName}/{messageId}")
+    fun deleteMessage(
+        @PathVariable channelName: String,
+        @PathVariable messageId: String
+    ): ResponseEntity<Map<String, String>> {
+        val success = chatHandler.deleteMessage(channelName, messageId)
+        return if (success) {
+            ResponseEntity.ok(mapOf("status" to "DELETED", "id" to messageId, "channel" to channelName))
+        } else {
+            ResponseEntity.ok(mapOf("status" to "NOT_FOUND", "id" to messageId))
+        }
+    }
 }
