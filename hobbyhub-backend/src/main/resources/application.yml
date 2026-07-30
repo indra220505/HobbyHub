@@ -58,6 +58,7 @@ brevo:
 
 resend:
   api-key: ${RESEND_API_KEY:}
+  from-email: ${RESEND_FROM_EMAIL:noreply@hobbyhub.web.id}
 
 jwt:
   secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970

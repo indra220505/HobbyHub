@@ -50,6 +50,7 @@ brevo:
 
 resend:
   api-key: ${RESEND_API_KEY:}
+  from-email: ${RESEND_FROM_EMAIL:noreply@hobbyhub.web.id}
 
 server:
   port: ${PORT:8080}

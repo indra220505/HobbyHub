@@ -1,42 +1,35 @@
 package com.hobbyhub.service
 
 import com.hobbyhub.exception.EmailDeliveryException
-import jakarta.mail.internet.MimeMessage
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.mail.javamail.JavaMailSender
-import org.springframework.mail.javamail.MimeMessageHelper
-import org.springframework.stereotype.Service
+import org.springframework.boot.web.client.RestTemplateBuilder
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
+import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
-import org.springframework.boot.web.client.RestTemplateBuilder
 
 @Service
 class EmailService(
-    private val mailSender: JavaMailSender,
     private val restTemplateBuilder: RestTemplateBuilder,
-    @Value("\${spring.mail.username:hobbyhub.auth@gmail.com}") private val fromEmail: String,
-    @Value("\${spring.mail.password:none}") private val mailPassword: String,
-    @Value("\${spring.mail.host:smtp.gmail.com}") private val mailHost: String,
-    @Value("\${spring.mail.port:587}") private val mailPort: Int,
-    @Value("\${spring.profiles.active:dev}") private val activeProfile: String,
-    @Value("\${brevo.api-key:}") private val brevoApiKey: String,
-    @Value("\${resend.api-key:}") private val resendApiKey: String
+    @Value("\${resend.api-key:}") private val resendApiKey: String,
+    @Value("\${resend.from-email:noreply@hobbyhub.web.id}") private val resendFromEmail: String,
+    @Value("\${spring.profiles.active:dev}") private val activeProfile: String
 ) {
     private val log = LoggerFactory.getLogger(EmailService::class.java)
     private val restTemplate: RestTemplate = restTemplateBuilder.build()
+    private val resendApiUrl = "https://api.resend.com/emails"
 
     /**
-     * Synchronously sends OTP email with retry mechanism (3 attempts with 10s timeouts).
-     * Throws [EmailDeliveryException] if all attempts fail, causing transaction rollback in calling service.
+     * Synchronously sends OTP email via Resend HTTP REST API (Port 443).
+     * Throws [EmailDeliveryException] if sending fails, causing transaction rollback in calling service.
      */
     fun sendOtpEmail(toEmail: String, otpCode: String) {
         val cleanToEmail = toEmail.trim().lowercase()
 
-        // 1. Log OTP according to active profile (Hide OTP in production log for security)
-        log.info("Creating OTP...")
+        // 1. Log OTP according to active profile
+        log.info("Creating OTP for [{}]...", cleanToEmail)
         if (activeProfile == "dev") {
             log.info("==========================================================================")
             log.info("VERIFICATION OTP CODE FOR [{}]: [{}]", cleanToEmail, otpCode)
@@ -45,144 +38,49 @@ class EmailService(
             log.info("OTP generated successfully for [{}]. (Hidden in production)", cleanToEmail)
         }
 
+        // 2. Validate API Key
+        if (resendApiKey.isBlank()) {
+            log.error("❌ CRITICAL: RESEND_API_KEY environment variable is not configured!")
+            log.error("Registration / OTP Action Rolled Back.")
+            throw EmailDeliveryException("Layanan email belum dikonfigurasi pada server. Harap set RESEND_API_KEY di Railway.")
+        }
+
         val subject = "$otpCode adalah Kode Verifikasi HobbyHub Anda"
         val htmlContent = buildEmailTemplate(otpCode)
 
-        // 2. HTTP API Priorities (Port 443 - Never blocked by Railway)
-        if (brevoApiKey.isNotBlank()) {
-            log.info("BREVO_API_KEY detected. Using Brevo HTTP REST API (Port 443)...")
-            try {
-                sendViaBrevo(cleanToEmail, subject, htmlContent)
-                return
-            } catch (ex: Exception) {
-                log.error("Failed to send email via Brevo HTTP API.", ex)
-                if (resendApiKey.isBlank() && (mailPassword == "none" || mailPassword.isBlank())) {
-                    throw EmailDeliveryException("Gagal mengirim email via Brevo HTTP API: ${ex.message}", ex)
-                }
-            }
+        // 3. Prepare Resend API Request
+        val sender = "HobbyHub <$resendFromEmail>"
+        val headers = HttpHeaders().apply {
+            contentType = MediaType.APPLICATION_JSON
+            setBearerAuth(resendApiKey)
         }
-
-        if (resendApiKey.isNotBlank()) {
-            log.info("RESEND_API_KEY detected. Using Resend HTTP REST API (Port 443)...")
-            try {
-                sendViaResend(cleanToEmail, subject, htmlContent)
-                return
-            } catch (ex: Exception) {
-                log.error("Failed to send email via Resend API.", ex)
-                if (mailPassword == "none" || mailPassword.isBlank()) {
-                    throw EmailDeliveryException("Gagal mengirim email via Resend HTTP API: ${ex.message}", ex)
-                }
-            }
-        }
-
-        // 3. Fallback to SMTP
-        if (mailPassword == "none" || mailPassword.isBlank()) {
-            log.error("Email Configuration Failed: No BREVO_API_KEY, RESEND_API_KEY, or SPRING_MAIL_PASSWORD provided.")
-            log.error("Registration / OTP Action Rolled Back.")
-            throw EmailDeliveryException("Layanan email belum dikonfigurasi pada server. Silakan set BREVO_API_KEY atau SPRING_MAIL_PASSWORD.")
-        }
-
-        log.info("Connecting Gmail SMTP [{}:{}...] with 10s timeout", mailHost, mailPort)
-
-
-        val maxRetries = 3
-        var lastException: Exception? = null
-
-        // 3. Fast Retry Loop with Exponential Backoff (500ms, 1000ms)
-        for (attempt in 1..maxRetries) {
-            try {
-                log.info("Sending Email (Attempt {}/{})...", attempt, maxRetries)
-
-                val message: MimeMessage = mailSender.createMimeMessage()
-                val helper = MimeMessageHelper(message, true, "UTF-8")
-                helper.setFrom(fromEmail, "HobbyHub Support")
-                helper.setTo(cleanToEmail)
-                helper.setSubject(subject)
-                helper.setText(htmlContent, true)
-
-                mailSender.send(message)
-                log.info("SMTP Connected.")
-                log.info("Email Delivered successfully to [{}].", cleanToEmail)
-                return // Email sent successfully!
-            } catch (ex: Exception) {
-                lastException = ex
-                log.error("❌ SMTP Connection Failed (Attempt {}/{}). Type: {}, Message: {}", attempt, maxRetries, ex.javaClass.name, ex.message)
-                log.error("Full Exception Trace for Railway Logging:", ex)
-
-                if (attempt < maxRetries) {
-                    val backoffMs = (500L * Math.pow(2.0, (attempt - 1).toDouble())).toLong() // 500ms, 1000ms
-                    log.info("Retrying in {}ms (Retry {})...", backoffMs, attempt)
-                    try {
-                        Thread.sleep(backoffMs)
-                    } catch (_: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                    }
-                }
-            }
-        }
-
-        // 4. Failure after max retries
-        log.error("❌ All {} SMTP attempts failed for [{}]. Root Cause: {}", maxRetries, cleanToEmail, lastException?.message, lastException)
-        log.error("Registration / OTP Action Rolled Back.")
-
-        throw EmailDeliveryException(
-            "Gagal mengirim email verifikasi ke $cleanToEmail. Detail Error: ${lastException?.message ?: "Unknown SMTP error"}",
-            lastException
-        )
-    }
-
-    private fun sendViaBrevo(toEmail: String, subject: String, htmlContent: String) {
-        val url = "https://api.brevo.com/v3/smtp/email"
-        
-        val headers = HttpHeaders()
-        headers.contentType = MediaType.APPLICATION_JSON
-        headers.set("api-key", brevoApiKey)
-        
-        val requestBody = mapOf(
-            "sender" to mapOf("name" to "HobbyHub Support", "email" to fromEmail),
-            "to" to listOf(mapOf("email" to toEmail)),
-            "subject" to subject,
-            "htmlContent" to htmlContent
-        )
-
-        val request = HttpEntity(requestBody, headers)
-        
-        log.info("Sending Email via Brevo REST API to [{}]...", toEmail)
-        val response = restTemplate.postForEntity(url, request, String::class.java)
-        
-        if (response.statusCode.is2xxSuccessful) {
-            log.info("Email Delivered successfully to [{}] via Brevo HTTP API.", toEmail)
-        } else {
-            throw Exception("Brevo API returned status: ${response.statusCode}")
-        }
-    }
-
-    private fun sendViaResend(toEmail: String, subject: String, htmlContent: String) {
-        val url = "https://api.resend.com/emails"
-        
-        val headers = HttpHeaders()
-        headers.contentType = MediaType.APPLICATION_JSON
-        headers.setBearerAuth(resendApiKey)
-        
-        // Resend doesn't allow gmail.com sender without verifying domain
-        val sender = if (fromEmail.endsWith("@gmail.com")) "onboarding@resend.dev" else "HobbyHub Support <$fromEmail>"
 
         val requestBody = mapOf(
             "from" to sender,
-            "to" to listOf(toEmail),
+            "to" to listOf(cleanToEmail),
             "subject" to subject,
             "html" to htmlContent
         )
 
-        val request = HttpEntity(requestBody, headers)
-        
-        log.info("Sending Email via Resend to [{}]...", toEmail)
-        val response = restTemplate.postForEntity(url, request, String::class.java)
-        
-        if (response.statusCode.is2xxSuccessful) {
-            log.info("Email Delivered successfully to [{}] via Resend API.", toEmail)
-        } else {
-            throw Exception("Resend API returned status: \${response.statusCode}")
+        val requestEntity = HttpEntity(requestBody, headers)
+
+        // 4. Send via Resend REST API
+        try {
+            log.info("Sending OTP email to [{}] via Resend REST API (From: {})...", cleanToEmail, sender)
+            val response = restTemplate.postForEntity(resendApiUrl, requestEntity, String::class.java)
+
+            if (response.statusCode.is2xxSuccessful) {
+                log.info("✅ Email Delivered successfully to [{}] via Resend API.", cleanToEmail)
+            } else {
+                log.error("❌ Resend API returned non-2xx status: {}", response.statusCode)
+                throw Exception("Resend API response status: ${response.statusCode}")
+            }
+        } catch (ex: Exception) {
+            log.error("❌ Failed to send OTP email to [{}] via Resend API. Cause: {}", cleanToEmail, ex.message, ex)
+            throw EmailDeliveryException(
+                "Gagal mengirim email verifikasi ke $cleanToEmail. Detail: ${ex.message}",
+                ex
+            )
         }
     }
 
