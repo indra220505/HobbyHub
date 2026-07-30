@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hobbyhub.data.local.CommunityRegistryManager
 import com.hobbyhub.data.local.UserSessionManager
+import com.hobbyhub.model.Channel
+import com.hobbyhub.model.ChannelType
 import com.hobbyhub.model.Community
 import com.hobbyhub.ui.theme.*
 import com.hobbyhub.data.remote.NetworkModule
