@@ -35,12 +35,22 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("D:/HobbyHub/hobbyhub-release.jks")
+            storePassword = "HobbyHubRelease2026Secure"
+            keyAlias = "hobbyhub"
+            keyPassword = "HobbyHubRelease2026Secure"
+        }
+    }
+
     buildTypes {
         debug {
-            // No need to redefine config fields here if flavors are used, but we can override if needed
+            // No need to redefine config fields here if flavors are used
         }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

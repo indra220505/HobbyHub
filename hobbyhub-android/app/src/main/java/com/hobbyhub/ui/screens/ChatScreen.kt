@@ -1,5 +1,6 @@
 package com.hobbyhub.ui.screens
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,10 +20,24 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.gson.Gson
+import com.hobbyhub.BuildConfig
 import com.hobbyhub.data.local.ChatLocalDatabaseManager
 import com.hobbyhub.data.local.UserSessionManager
 import com.hobbyhub.model.ChatMessage
+import com.hobbyhub.model.RoleBadge
 import com.hobbyhub.ui.theme.*
+import okhttp3.*
+
+data class WsPayload(
+    val id: String,
+    val channelName: String,
+    val senderName: String,
+    val senderAvatar: String,
+    val senderBadge: String,
+    val content: String,
+    val timestamp: String
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,9 +49,57 @@ fun ChatScreen(
     val chatDb = remember { ChatLocalDatabaseManager(context) }
     val sessionManager = remember { UserSessionManager(context) }
     val currentUser = remember { sessionManager.getUser() }
+    val gson = remember { Gson() }
 
     var messageText by remember { mutableStateOf("") }
     val messages = remember { mutableStateListOf(*chatDb.getMessagesForChannel(channelName).toTypedArray()) }
+    var webSocket by remember { mutableStateOf<WebSocket?>(null) }
+
+    // Connect to WebSocket /chat when entering screen
+    DisposableEffect(channelName) {
+        val client = OkHttpClient()
+        val wsUrl = BuildConfig.WS_BASE_URL + "chat"
+        val request = Request.Builder().url(wsUrl).build()
+
+        val ws = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(ws: WebSocket, response: Response) {
+                Log.d("ChatScreen", "Connected to Chat WebSocket: $wsUrl")
+            }
+
+            override fun onMessage(ws: WebSocket, text: String) {
+                try {
+                    val payload = gson.fromJson(text, WsPayload::class.java)
+                    if (payload.channelName.equals(channelName, ignoreCase = true)) {
+                        val newMsg = ChatMessage(
+                            id = payload.id,
+                            senderName = payload.senderName,
+                            senderAvatar = payload.senderAvatar,
+                            senderBadge = RoleBadge(payload.senderBadge, "#6C5CE7"),
+                            content = payload.content,
+                            timestamp = payload.timestamp
+                        )
+                        // Add to UI list if not already present
+                        if (messages.none { it.id == newMsg.id }) {
+                            messages.add(newMsg)
+                            chatDb.saveMessageToChannel(channelName, newMsg)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("ChatScreen", "Error parsing WebSocket message", e)
+                }
+            }
+
+            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                Log.e("ChatScreen", "Chat WebSocket error", t)
+            }
+        })
+
+        webSocket = ws
+
+        onDispose {
+            ws.close(1000, "Leaving screen")
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -44,6 +107,19 @@ fun ChatScreen(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "# $channelName", color = TextPrimary, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            color = SecondaryTurquoise.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "ONLINE",
+                                color = SecondaryTurquoise,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
                     }
                 },
                 navigationIcon = {
@@ -89,16 +165,32 @@ fun ChatScreen(
                 IconButton(
                     onClick = {
                         if (messageText.isNotBlank()) {
+                            val msgId = "msg_${System.currentTimeMillis()}"
                             val newMsg = ChatMessage(
-                                id = "msg_${System.currentTimeMillis()}",
+                                id = msgId,
                                 senderName = currentUser.displayName,
                                 senderAvatar = currentUser.displayName.take(1),
                                 senderBadge = currentUser.roleBadge,
                                 content = messageText,
                                 timestamp = "Baru saja"
                             )
+
+                            // Add locally
                             messages.add(newMsg)
                             chatDb.saveMessageToChannel(channelName, newMsg)
+
+                            // Send via WebSocket broadcast
+                            val payload = WsPayload(
+                                id = msgId,
+                                channelName = channelName,
+                                senderName = currentUser.displayName,
+                                senderAvatar = currentUser.displayName.take(1),
+                                senderBadge = currentUser.roleBadge?.name ?: "Member",
+                                content = messageText,
+                                timestamp = "Baru saja"
+                            )
+                            webSocket?.send(gson.toJson(payload))
+
                             messageText = ""
                         }
                     },
