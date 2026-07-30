@@ -26,9 +26,9 @@ class MailConfig(
         val props: Properties = mailSender.javaMailProperties
         props["mail.transport.protocol"] = "smtp"
         props["mail.smtp.auth"] = "true"
-        props["mail.smtp.connectiontimeout"] = "5000"
-        props["mail.smtp.timeout"] = "5000"
-        props["mail.smtp.writetimeout"] = "5000"
+        props["mail.smtp.connectiontimeout"] = "3000"
+        props["mail.smtp.timeout"] = "3000"
+        props["mail.smtp.writetimeout"] = "3000"
 
         if (mailPort == 465) {
             // SSL Direct configuration for Port 465

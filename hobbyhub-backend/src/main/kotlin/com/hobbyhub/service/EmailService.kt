@@ -20,7 +20,7 @@ class EmailService(
     private val log = LoggerFactory.getLogger(EmailService::class.java)
 
     /**
-     * Synchronously sends OTP email with retry mechanism (3 attempts with exponential backoff).
+     * Synchronously sends OTP email with retry mechanism (3 attempts with fast 3s timeouts).
      * Throws [EmailDeliveryException] if all attempts fail, causing transaction rollback in calling service.
      */
     fun sendOtpEmail(toEmail: String, otpCode: String) {
@@ -51,7 +51,7 @@ class EmailService(
         val maxRetries = 3
         var lastException: Exception? = null
 
-        // 3. Retry Loop with Exponential Backoff
+        // 3. Fast Retry Loop with Exponential Backoff (500ms, 1000ms)
         for (attempt in 1..maxRetries) {
             try {
                 log.info("Sending Email (Attempt {}/{})...", attempt, maxRetries)
@@ -72,7 +72,7 @@ class EmailService(
                 log.warn("SMTP Connection Failed (Attempt {}/{}). Cause: {} - {}", attempt, maxRetries, ex.javaClass.simpleName, ex.message)
 
                 if (attempt < maxRetries) {
-                    val backoffMs = (1000L * Math.pow(2.0, (attempt - 1).toDouble())).toLong() // 1000ms, 2000ms
+                    val backoffMs = (500L * Math.pow(2.0, (attempt - 1).toDouble())).toLong() // 500ms, 1000ms
                     log.info("Retrying in {}ms (Retry {})...", backoffMs, attempt)
                     try {
                         Thread.sleep(backoffMs)
@@ -86,10 +86,10 @@ class EmailService(
         // 4. Failure after max retries
         log.error("❌ All {} SMTP attempts failed for [{}]. Cause: {}", maxRetries, cleanToEmail, lastException?.message)
         log.error("Registration / OTP Action Rolled Back.")
-        log.warn("👉 Hint: Verify SPRING_MAIL_PASSWORD is a 16-character Gmail App Password. If port 587 times out on Railway, try port 465.")
+        log.warn("👉 Hint: Verify SPRING_MAIL_PASSWORD is a 16-character Gmail App Password. On Railway free tier, ensure SPRING_MAIL_PORT is set to 587 (STARTTLS).")
 
         throw EmailDeliveryException(
-            "Verification email could not be sent to $cleanToEmail. Please try again later.",
+            "Gagal mengirim email verifikasi ke $cleanToEmail. Silakan periksa kembali email Anda atau coba lagi nanti.",
             lastException
         )
     }
