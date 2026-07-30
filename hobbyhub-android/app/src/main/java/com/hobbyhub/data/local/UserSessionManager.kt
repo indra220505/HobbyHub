@@ -137,6 +137,9 @@ class UserSessionManager(context: Context) {
             generated
         }
 
+        val isSuperOwner = isSuperOwnerSession()
+        val roleBadge = if (isSuperOwner) RoleBadge("Super Owner 👑", "#FF7675") else RoleBadge("Member", "#00CEC9")
+
         return User(
             id = userId,
             username = username,
