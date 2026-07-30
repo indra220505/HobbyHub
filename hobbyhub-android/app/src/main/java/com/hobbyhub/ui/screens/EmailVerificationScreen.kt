@@ -144,7 +144,12 @@ fun EmailVerificationScreen(
                                 delay(800)
                                 onVerificationSuccess()
                             } else {
-                                errorMessage = "Kode OTP salah atau sudah kedaluwarsa!"
+                                val rawErr = response.errorBody()?.string() ?: ""
+                                errorMessage = try {
+                                    org.json.JSONObject(rawErr).optString("message", "Kode OTP salah atau sudah kedaluwarsa!")
+                                } catch (e: Exception) {
+                                    if (rawErr.isNotBlank()) rawErr else "Kode OTP salah atau sudah kedaluwarsa!"
+                                }
                             }
                         } catch (e: Exception) {
                             errorMessage = "Terjadi kesalahan jaringan: ${e.message}"
