@@ -57,6 +57,17 @@ class DataSourceConfig(
                 throw RuntimeException("Invalid DATABASE_URL format", e)
             }
         } 
+        // 1.5. Try if DATABASE_URL is already a JDBC URL
+        else if (databaseUrl.isNotBlank() && databaseUrl.startsWith("jdbc:postgresql://")) {
+            log.info("✅ Detected JDBC URL in DATABASE_URL from Railway environment.")
+            config.jdbcUrl = databaseUrl
+            config.driverClassName = "org.postgresql.Driver"
+            // Note: username and password should ideally be in SPRING_DATASOURCE_USERNAME etc if not embedded in JDBC URL 
+            // but Neon JDBC URLs usually contain the username/password in the URL or they are passed separately.
+            // If they are in the URL, HikariCP will use them.
+            if (springUsername.isNotBlank()) config.username = springUsername
+            if (springPassword.isNotBlank()) config.password = springPassword
+        }
         // 2. Try individual Railway Postgres variables (PGHOST, PGUSER, etc.)
         else if (pgHost.isNotBlank() && pgDatabase.isNotBlank()) {
             log.info("✅ Detected Railway PGHOST ($pgHost) and PGDATABASE ($pgDatabase). Constructing JDBC URL...")
