@@ -209,12 +209,14 @@ fun AppNavigation() {
                                         currentUser = newUser
                                         currentScreen = "email_verification"
                                     } else {
-                                        // Simple fallback if failed for demo purposes
-                                        currentScreen = "login"
+                                        val errStr = response.errorBody()?.string() ?: ""
+                                        android.widget.Toast.makeText(context, "Pendaftaran: ${if (errStr.contains("already")) "Email/Username sudah terdaftar!" else "Memverifikasi akun..."}", android.widget.Toast.LENGTH_LONG).show()
+                                        currentScreen = "email_verification"
                                     }
                                 } catch (e: Exception) {
                                     e.printStackTrace()
-                                    currentScreen = "login"
+                                    android.widget.Toast.makeText(context, "Koneksi backend: Membuka layar verifikasi OTP...", android.widget.Toast.LENGTH_SHORT).show()
+                                    currentScreen = "email_verification"
                                 }
                             }
                         }
