@@ -63,6 +63,36 @@ class WebRtcClient(
         }
     }
 
+    fun setSpeakerphoneOn(speakerOn: Boolean) {
+        try {
+            audioManager?.let { am ->
+                am.isSpeakerphoneOn = speakerOn
+                am.mode = AudioManager.MODE_IN_COMMUNICATION
+                Log.d(TAG, "Speakerphone set to: $speakerOn")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting speakerphone", e)
+        }
+    }
+
+    fun setCallVolume(volumeRatio: Float) {
+        try {
+            val clampedRatio = volumeRatio.coerceIn(0.0f, 1.0f)
+            audioManager?.let { am ->
+                val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+                val targetVol = (maxVol * clampedRatio).toInt()
+                am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVol, 0)
+            }
+            remoteAudioTracks.values.forEach { track ->
+                try {
+                    track.setVolume(clampedRatio.toDouble())
+                } catch (_: Exception) {}
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting call volume", e)
+        }
+    }
+
     private fun initWebRtc() {
         try {
             PeerConnectionFactory.initialize(
@@ -311,9 +341,9 @@ class WebRtcClient(
 
     private fun removePeerConnection(userId: String) {
         val pc = peerConnections.remove(userId)
-        pc?.close()
+        try { pc?.close() } catch (_: Exception) {}
         val track = remoteAudioTracks.remove(userId)
-        try { track?.dispose() } catch (_: Exception) {}
+        try { track?.setEnabled(false) } catch (_: Exception) {}
         pendingIceCandidates.remove(userId)
         listener.onRemoteAudioTrackRemoved(userId)
     }
@@ -332,7 +362,7 @@ class WebRtcClient(
         peerConnections.clear()
         
         remoteAudioTracks.forEach { (_, track) ->
-            try { track.dispose() } catch (_: Exception) {}
+            try { track.setEnabled(false) } catch (_: Exception) {}
         }
         remoteAudioTracks.clear()
         pendingIceCandidates.clear()

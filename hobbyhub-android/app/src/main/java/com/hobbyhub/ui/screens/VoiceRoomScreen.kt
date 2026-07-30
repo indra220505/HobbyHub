@@ -1,11 +1,15 @@
 package com.hobbyhub.ui.screens
 
 import android.Manifest
+import android.app.Activity
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -50,10 +54,15 @@ fun VoiceRoomScreen(
     onDisconnect: () -> Unit
 ) {
     val context = LocalContext.current
+    val activity = context as? Activity
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     
     var isMuted by remember { mutableStateOf(false) }
-    var isDeafened by remember { mutableStateOf(false) }
+    var isSpeakerOn by remember { mutableStateOf(true) }
+    var callVolume by remember { mutableStateOf(0.85f) }
+    var showVolumeControl by remember { mutableStateOf(false) }
+    var isLeaving by remember { mutableStateOf(false) }
+
     var hasMicPermission by remember { mutableStateOf(
         ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     ) }
@@ -79,8 +88,37 @@ fun VoiceRoomScreen(
         hasMicPermission = isGranted
     }
 
+    // Set hardware volume keys to control STREAM_VOICE_CALL while in VoiceRoom
+    DisposableEffect(Unit) {
+        activity?.volumeControlStream = AudioManager.STREAM_VOICE_CALL
+        onDispose {
+            activity?.volumeControlStream = AudioManager.USE_DEFAULT_STREAM_TYPE
+        }
+    }
+
+    fun safeLeaveRoom() {
+        if (isLeaving) return
+        isLeaving = true
+
+        try {
+            signalingClient?.disconnect()
+        } catch (e: Exception) {
+            Log.e("VoiceRoomScreen", "Error disconnecting signaling", e)
+        }
+
+        try {
+            webRtcClient?.disconnect()
+        } catch (e: Exception) {
+            Log.e("VoiceRoomScreen", "Error disconnecting WebRTC", e)
+        }
+
+        mainHandler.post {
+            onDisconnect()
+        }
+    }
+
     fun updateOrAddParticipant(id: String, name: String?, track: AudioTrack? = null, isSpeaking: Boolean = false) {
-        if (id == currentUser.id) return // Don't overwrite self display name with remote signals
+        if (isLeaving || id == currentUser.id) return
 
         val displayName = name ?: "Anggota ${id.takeLast(4)}"
         val avatarInitial = displayName.take(1).ifBlank { "U" }.uppercase()
@@ -122,6 +160,7 @@ fun VoiceRoomScreen(
                 override fun onConnectionEstablished() {}
                 
                 override fun onOfferReceived(senderId: String, senderName: String?, sdp: String) {
+                    if (isLeaving) return
                     mainHandler.post {
                         updateOrAddParticipant(senderId, senderName)
                     }
@@ -129,14 +168,17 @@ fun VoiceRoomScreen(
                 }
 
                 override fun onAnswerReceived(senderId: String, sdp: String) {
+                    if (isLeaving) return
                     webRtcClient?.handleAnswerReceived(senderId, sdp)
                 }
 
                 override fun onIceCandidateReceived(senderId: String, candidate: String, sdpMid: String, sdpMLineIndex: Int) {
+                    if (isLeaving) return
                     webRtcClient?.handleIceCandidateReceived(senderId, candidate, sdpMid, sdpMLineIndex)
                 }
 
                 override fun onUserJoined(senderId: String, senderName: String?) {
+                    if (isLeaving) return
                     mainHandler.post {
                         updateOrAddParticipant(senderId, senderName)
                     }
@@ -144,6 +186,7 @@ fun VoiceRoomScreen(
                 }
 
                 override fun onUserLeft(senderId: String) {
+                    if (isLeaving) return
                     mainHandler.post {
                         participants.removeAll { it.id == senderId }
                     }
@@ -159,12 +202,14 @@ fun VoiceRoomScreen(
             signalingClient = sigClient,
             listener = object : WebRtcListener {
                 override fun onRemoteAudioTrackAdded(userId: String, track: AudioTrack) {
+                    if (isLeaving) return
                     mainHandler.post {
                         updateOrAddParticipant(userId, null, track = track, isSpeaking = true)
                     }
                 }
 
                 override fun onRemoteAudioTrackRemoved(userId: String) {
+                    if (isLeaving) return
                     mainHandler.post {
                         val index = participants.indexOfFirst { it.id == userId }
                         if (index != -1) {
@@ -181,13 +226,23 @@ fun VoiceRoomScreen(
         sigClient.connect()
 
         onDispose {
-            sigClient.disconnect()
-            rtcClient.disconnect()
+            if (!isLeaving) {
+                sigClient.disconnect()
+                rtcClient.disconnect()
+            }
         }
     }
 
     LaunchedEffect(isMuted) {
         webRtcClient?.setMicrophoneMute(isMuted)
+    }
+
+    LaunchedEffect(isSpeakerOn) {
+        webRtcClient?.setSpeakerphoneOn(isSpeakerOn)
+    }
+
+    LaunchedEffect(callVolume) {
+        webRtcClient?.setCallVolume(callVolume)
     }
 
     Scaffold(
@@ -196,11 +251,11 @@ fun VoiceRoomScreen(
                 title = {
                     Column {
                         Text(text = "🔊 $channelName", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        Text(text = "${participants.size} Peserta Terhubung", color = SecondaryTurquoise, fontSize = 12.sp)
+                        Text(text = "${participants.size} Peserta • Mode Telepon Panggilan", color = SecondaryTurquoise, fontSize = 12.sp)
                     }
                 },
                 actions = {
-                    IconButton(onClick = onDisconnect) {
+                    IconButton(onClick = { safeLeaveRoom() }) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = TextMuted)
                     }
                 },
@@ -208,57 +263,122 @@ fun VoiceRoomScreen(
             )
         },
         bottomBar = {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(SurfaceCard)
-                    .padding(20.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                IconButton(
-                    onClick = {
-                        isMuted = !isMuted
-                        val selfIndex = participants.indexOfFirst { it.id == currentUser.id }
-                        if (selfIndex != -1) {
-                            participants[selfIndex] = participants[selfIndex].copy(isMuted = isMuted, isSpeaking = !isMuted)
+                // Animated In-Call Volume Slider Card
+                AnimatedVisibility(visible = showVolumeControl) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        colors = CardDefaults.cardColors(containerColor = ObsidianBg),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "🔊 Volume Panggilan Suara",
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = "${(callVolume * 100).toInt()}%",
+                                    color = SecondaryTurquoise,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Slider(
+                                value = callVolume,
+                                onValueChange = { callVolume = it },
+                                valueRange = 0.0f..1.0f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = SecondaryTurquoise,
+                                    activeTrackColor = SecondaryTurquoise,
+                                    inactiveTrackColor = BorderDark
+                                )
+                            )
                         }
-                    },
-                    modifier = Modifier
-                        .size(56.dp)
-                        .background(if (isMuted) TertiaryCoral else SurfaceCard, CircleShape)
-                        .border(1.dp, BorderDark, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                        contentDescription = "Mute Mic",
-                        tint = TextPrimary
-                    )
+                    }
                 }
 
-                IconButton(
-                    onClick = { isDeafened = !isDeafened },
-                    modifier = Modifier
-                        .size(56.dp)
-                        .background(if (isDeafened) TertiaryCoral else SurfaceCard, CircleShape)
-                        .border(1.dp, BorderDark, CircleShape)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = if (isDeafened) Icons.Default.HeadsetOff else Icons.Default.Headset,
-                        contentDescription = "Deafen Audio",
-                        tint = TextPrimary
-                    )
-                }
+                    // Mute Mic Button
+                    IconButton(
+                        onClick = {
+                            isMuted = !isMuted
+                            val selfIndex = participants.indexOfFirst { it.id == currentUser.id }
+                            if (selfIndex != -1) {
+                                participants[selfIndex] = participants[selfIndex].copy(isMuted = isMuted, isSpeaking = !isMuted)
+                            }
+                        },
+                        modifier = Modifier
+                            .size(52.dp)
+                            .background(if (isMuted) TertiaryCoral else SurfaceCard, CircleShape)
+                            .border(1.dp, BorderDark, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                            contentDescription = "Mute Mic",
+                            tint = TextPrimary
+                        )
+                    }
 
-                Button(
-                    onClick = onDisconnect,
-                    colors = ButtonDefaults.buttonColors(containerColor = TertiaryCoral),
-                    shape = CircleShape,
-                    modifier = Modifier.height(56.dp)
-                ) {
-                    Icon(Icons.Default.CallEnd, contentDescription = "Leave Voice")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Keluar", fontWeight = FontWeight.Bold)
+                    // Speakerphone Toggle Button
+                    IconButton(
+                        onClick = { isSpeakerOn = !isSpeakerOn },
+                        modifier = Modifier
+                            .size(52.dp)
+                            .background(if (isSpeakerOn) PrimaryViolet else SurfaceCard, CircleShape)
+                            .border(1.dp, BorderDark, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown,
+                            contentDescription = "Speaker Mode",
+                            tint = TextPrimary
+                        )
+                    }
+
+                    // In-Call Volume Slider Toggle Button
+                    IconButton(
+                        onClick = { showVolumeControl = !showVolumeControl },
+                        modifier = Modifier
+                            .size(52.dp)
+                            .background(if (showVolumeControl) SecondaryTurquoise else SurfaceCard, CircleShape)
+                            .border(1.dp, BorderDark, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Volume Slider",
+                            tint = TextPrimary
+                        )
+                    }
+
+                    // Leave / End Call Button
+                    Button(
+                        onClick = { safeLeaveRoom() },
+                        colors = ButtonDefaults.buttonColors(containerColor = TertiaryCoral),
+                        shape = CircleShape,
+                        modifier = Modifier.height(52.dp)
+                    ) {
+                        Icon(Icons.Default.CallEnd, contentDescription = "Leave Voice")
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Keluar", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         },
