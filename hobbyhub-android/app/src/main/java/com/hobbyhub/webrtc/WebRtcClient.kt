@@ -343,7 +343,7 @@ class WebRtcClient(
         try { localAudioTrack?.dispose() } catch (_: Exception) {}
         localAudioTrack = null
         
-        try { audioDeviceModule?.dispose() } catch (_: Exception) {}
+        try { audioDeviceModule?.release() } catch (_: Exception) {}
         audioDeviceModule = null
 
         try { peerConnectionFactory?.dispose() } catch (_: Exception) {}
