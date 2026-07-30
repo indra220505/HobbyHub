@@ -68,7 +68,7 @@ class VoiceForegroundService : Service() {
                 description = "Aktif saat bergabung di Voice Lounge"
                 setSound(null, null)
             }
-            val manager = getSystemService(Context::NOTIFICATION_SERVICE) as NotificationManager
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
         }
     }

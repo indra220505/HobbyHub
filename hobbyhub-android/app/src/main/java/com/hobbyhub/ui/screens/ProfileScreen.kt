@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hobbyhub.data.local.CommunityRegistryManager
+import com.hobbyhub.data.local.UserSessionManager
 import com.hobbyhub.model.Badge
 import com.hobbyhub.model.Community
 import com.hobbyhub.model.Quest
