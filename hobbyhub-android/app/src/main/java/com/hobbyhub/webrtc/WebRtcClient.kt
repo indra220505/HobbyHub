@@ -1,7 +1,9 @@
 package com.hobbyhub.webrtc
 
 import android.content.Context
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.os.Build
 import android.util.Log
 import org.webrtc.*
 import org.webrtc.audio.JavaAudioDeviceModule
@@ -67,8 +69,25 @@ class WebRtcClient(
         try {
             audioManager?.let { am ->
                 am.mode = AudioManager.MODE_IN_COMMUNICATION
-                am.isSpeakerphoneOn = true
                 am.isMicrophoneMute = false
+                
+                // Crucial Fix for Android 12+ (API 31, 34, 35 - Pixel 8 Pro):
+                // Modern Android OS deprecates isSpeakerphoneOn and requires setCommunicationDevice
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val devices = am.availableCommunicationDevices
+                    val speakerDevice = devices.find { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                    if (speakerDevice != null) {
+                        am.setCommunicationDevice(speakerDevice)
+                        Log.d(TAG, "Android 12+ Communication Device set to Built-in Speaker")
+                    } else {
+                        @Suppress("DEPRECATION")
+                        am.isSpeakerphoneOn = true
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    am.isSpeakerphoneOn = true
+                }
+
                 Log.d(TAG, "AudioManager configured: MODE_IN_COMMUNICATION, Speakerphone ON")
             }
         } catch (e: Exception) {
@@ -79,8 +98,20 @@ class WebRtcClient(
     fun setSpeakerphoneOn(speakerOn: Boolean) {
         try {
             audioManager?.let { am ->
-                am.isSpeakerphoneOn = speakerOn
                 am.mode = AudioManager.MODE_IN_COMMUNICATION
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (speakerOn) {
+                        val speakerDevice = am.availableCommunicationDevices.find { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                        if (speakerDevice != null) {
+                            am.setCommunicationDevice(speakerDevice)
+                        }
+                    } else {
+                        am.clearCommunicationDevice()
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    am.isSpeakerphoneOn = speakerOn
+                }
                 Log.d(TAG, "Speakerphone set to: $speakerOn")
             }
         } catch (e: Exception) {
@@ -376,7 +407,12 @@ class WebRtcClient(
         try {
             audioManager?.let { am ->
                 am.mode = AudioManager.MODE_NORMAL
-                am.isSpeakerphoneOn = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    am.clearCommunicationDevice()
+                } else {
+                    @Suppress("DEPRECATION")
+                    am.isSpeakerphoneOn = false
+                }
             }
         } catch (_: Exception) {}
 
