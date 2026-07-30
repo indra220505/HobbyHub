@@ -64,50 +64,65 @@ fun ChatScreen(
     var webSocket by remember { mutableStateOf<WebSocket?>(null) }
     var isConnected by remember { mutableStateOf(false) }
 
-    // Fetch initial chat history from Railway REST API
+    // Fetch initial chat history safely from Railway REST API
     LaunchedEffect(channelName) {
         coroutineScope.launch(Dispatchers.IO) {
             try {
                 val httpUrl = BuildConfig.API_BASE_URL + "api/chat/history/" + channelName
-                val client = OkHttpClient()
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+
                 val request = Request.Builder().url(httpUrl).build()
                 client.newCall(request).enqueue(object : Callback {
                     override fun onFailure(call: Call, e: IOException) {
-                        Log.e("ChatScreen", "Failed to fetch chat history", e)
+                        Log.e("ChatScreen", "Failed to fetch chat history safely: ${e.message}")
                     }
 
                     override fun onResponse(call: Call, response: Response) {
-                        response.body?.string()?.let { json ->
-                            val listType = object : TypeToken<List<WsPayload>>() {}.type
-                            val remoteHistory: List<WsPayload> = gson.fromJson(json, listType) ?: emptyList()
-                            mainHandler.post {
-                                remoteHistory.forEach { item ->
-                                    val msg = ChatMessage(
-                                        id = item.id,
-                                        senderName = item.senderName,
-                                        senderAvatar = item.senderAvatar,
-                                        senderBadge = RoleBadge(item.senderBadge, "#6C5CE7"),
-                                        content = item.content,
-                                        timestamp = item.timestamp
-                                    )
-                                    if (messages.none { it.id == msg.id }) {
-                                        messages.add(msg)
-                                        chatDb.saveMessageToChannel(channelName, msg)
+                        try {
+                            response.body?.string()?.let { json ->
+                                if (json.isNotBlank() && json.startsWith("[")) {
+                                    val listType = object : TypeToken<List<WsPayload>>() {}.type
+                                    val remoteHistory: List<WsPayload> = gson.fromJson(json, listType) ?: emptyList()
+                                    mainHandler.post {
+                                        remoteHistory.forEach { item ->
+                                            val safeAvatar = item.senderAvatar.ifBlank { item.senderName.take(1).ifBlank { "U" } }
+                                            val msg = ChatMessage(
+                                                id = item.id.ifBlank { "msg_${System.currentTimeMillis()}" },
+                                                senderName = item.senderName.ifBlank { "Member" },
+                                                senderAvatar = safeAvatar,
+                                                senderBadge = RoleBadge(item.senderBadge.ifBlank { "Member" }, "#6C5CE7"),
+                                                content = item.content,
+                                                timestamp = item.timestamp.ifBlank { "Baru saja" }
+                                            )
+                                            if (messages.none { it.id == msg.id }) {
+                                                messages.add(msg)
+                                                chatDb.saveMessageToChannel(channelName, msg)
+                                            }
+                                        }
                                     }
                                 }
                             }
+                        } catch (ex: Exception) {
+                            Log.e("ChatScreen", "Error parsing remote chat history", ex)
                         }
                     }
                 })
             } catch (e: Exception) {
-                Log.e("ChatScreen", "Error fetching history", e)
+                Log.e("ChatScreen", "Error launching history request", e)
             }
         }
     }
 
-    // Connect to WebSocket /chat when entering screen
+    // Connect to WebSocket /chat safely when entering screen
     DisposableEffect(channelName) {
-        val client = OkHttpClient()
+        val client = OkHttpClient.Builder()
+            .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+
         val wsUrl = BuildConfig.WS_BASE_URL + "chat"
         val request = Request.Builder().url(wsUrl).build()
 
@@ -120,22 +135,25 @@ fun ChatScreen(
             override fun onMessage(ws: WebSocket, text: String) {
                 try {
                     Log.d("ChatScreen", "WebSocket message received: $text")
-                    val payload = gson.fromJson(text, WsPayload::class.java)
-                    if (payload != null && payload.channelName.equals(channelName, ignoreCase = true)) {
-                        val newMsg = ChatMessage(
-                            id = payload.id,
-                            senderName = payload.senderName,
-                            senderAvatar = payload.senderAvatar,
-                            senderBadge = RoleBadge(payload.senderBadge, "#6C5CE7"),
-                            content = payload.content,
-                            timestamp = payload.timestamp
-                        )
+                    if (text.isNotBlank() && text.startsWith("{")) {
+                        val payload = gson.fromJson(text, WsPayload::class.java)
+                        if (payload != null && payload.channelName.equals(channelName, ignoreCase = true)) {
+                            val safeAvatar = payload.senderAvatar.ifBlank { payload.senderName.take(1).ifBlank { "U" } }
+                            val newMsg = ChatMessage(
+                                id = payload.id.ifBlank { "msg_${System.currentTimeMillis()}" },
+                                senderName = payload.senderName.ifBlank { "Member" },
+                                senderAvatar = safeAvatar,
+                                senderBadge = RoleBadge(payload.senderBadge.ifBlank { "Member" }, "#6C5CE7"),
+                                content = payload.content,
+                                timestamp = payload.timestamp.ifBlank { "Baru saja" }
+                            )
 
-                        // CRITICAL: Post to Main Thread for Compose Recomposition!
-                        mainHandler.post {
-                            if (messages.none { it.id == newMsg.id }) {
-                                messages.add(newMsg)
-                                chatDb.saveMessageToChannel(channelName, newMsg)
+                            // CRITICAL: Post to Main Thread safely for Compose Recomposition!
+                            mainHandler.post {
+                                if (messages.none { it.id == newMsg.id }) {
+                                    messages.add(newMsg)
+                                    chatDb.saveMessageToChannel(channelName, newMsg)
+                                }
                             }
                         }
                     }
@@ -145,7 +163,7 @@ fun ChatScreen(
             }
 
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-                Log.e("ChatScreen", "Chat WebSocket error", t)
+                Log.e("ChatScreen", "Chat WebSocket error: ${t.message}")
                 mainHandler.post { isConnected = false }
             }
 
@@ -157,7 +175,9 @@ fun ChatScreen(
         webSocket = ws
 
         onDispose {
-            ws.close(1000, "Leaving screen")
+            try {
+                ws.close(1000, "Leaving screen")
+            } catch (_: Exception) {}
         }
     }
 
@@ -173,7 +193,7 @@ fun ChatScreen(
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
-                                text = if (isConnected) "ONLINE" else "CONNECTING...",
+                                text = if (isConnected) "ONLINE" else "OFFLINE",
                                 color = if (isConnected) SecondaryTurquoise else TertiaryCoral,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
@@ -226,32 +246,37 @@ fun ChatScreen(
                     onClick = {
                         if (messageText.isNotBlank()) {
                             val msgId = "msg_${System.currentTimeMillis()}"
+                            val avatarInitial = currentUser.displayName.take(1).ifBlank { "U" }
                             val newMsg = ChatMessage(
                                 id = msgId,
-                                senderName = currentUser.displayName,
-                                senderAvatar = currentUser.displayName.take(1),
+                                senderName = currentUser.displayName.ifBlank { "Member" },
+                                senderAvatar = avatarInitial,
                                 senderBadge = currentUser.roleBadge,
                                 content = messageText,
                                 timestamp = "Baru saja"
                             )
 
-                            // Add locally on Main thread
+                            // Add locally on Main thread safely
                             if (messages.none { it.id == newMsg.id }) {
                                 messages.add(newMsg)
                                 chatDb.saveMessageToChannel(channelName, newMsg)
                             }
 
-                            // Send via WebSocket broadcast
-                            val payload = WsPayload(
-                                id = msgId,
-                                channelName = channelName,
-                                senderName = currentUser.displayName,
-                                senderAvatar = currentUser.displayName.take(1),
-                                senderBadge = currentUser.roleBadge?.name ?: "Member",
-                                content = messageText,
-                                timestamp = "Baru saja"
-                            )
-                            webSocket?.send(gson.toJson(payload))
+                            // Send via WebSocket broadcast safely
+                            try {
+                                val payload = WsPayload(
+                                    id = msgId,
+                                    channelName = channelName,
+                                    senderName = currentUser.displayName.ifBlank { "Member" },
+                                    senderAvatar = avatarInitial,
+                                    senderBadge = currentUser.roleBadge?.name ?: "Member",
+                                    content = messageText,
+                                    timestamp = "Baru saja"
+                                )
+                                webSocket?.send(gson.toJson(payload))
+                            } catch (ex: Exception) {
+                                Log.e("ChatScreen", "Error sending WebSocket message", ex)
+                            }
 
                             messageText = ""
                         }
@@ -323,21 +348,42 @@ fun ChatMessageBubble(msg: ChatMessage) {
                 .background(PrimaryViolet),
             contentAlignment = Alignment.Center
         ) {
-            Text(text = msg.senderAvatar, color = Color.White, fontWeight = FontWeight.Bold)
+            Text(
+                text = msg.senderAvatar.ifBlank { "U" },
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
         }
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = msg.senderName, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(
+                    text = msg.senderName.ifBlank { "Member" },
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
                 Spacer(modifier = Modifier.width(6.dp))
                 msg.senderBadge?.let { badge ->
+                    val badgeColor = remember(badge.colorHex) {
+                        try {
+                            if (!badge.colorHex.isNull meOrBlank() && badge.colorHex.startsWith("#")) {
+                                Color(android.graphics.Color.parseColor(badge.colorHex))
+                            } else {
+                                SecondaryTurquoise
+                            }
+                        } catch (_: Exception) {
+                            SecondaryTurquoise
+                        }
+                    }
+
                     Surface(
-                        color = Color(android.graphics.Color.parseColor(badge.colorHex)).copy(alpha = 0.2f),
+                        color = badgeColor.copy(alpha = 0.2f),
                         shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
-                            text = badge.name,
-                            color = Color(android.graphics.Color.parseColor(badge.colorHex)),
+                            text = badge.name.ifBlank { "Member" },
+                            color = badgeColor,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -345,27 +391,31 @@ fun ChatMessageBubble(msg: ChatMessage) {
                     }
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(text = msg.timestamp, color = TextMuted, fontSize = 10.sp)
+                Text(text = msg.timestamp.ifBlank { "Baru saja" }, color = TextMuted, fontSize = 10.sp)
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(text = msg.content, color = TextPrimary, fontSize = 14.sp)
 
             msg.codeSnippet?.let { code ->
-                Spacer(modifier = Modifier.height(6.dp))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceCard),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BorderDark))
-                ) {
-                    Text(
-                        text = code,
-                        color = SecondaryTurquoise,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(10.dp)
-                    )
+                if (code.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BorderDark))
+                    ) {
+                        Text(
+                            text = code,
+                            color = SecondaryTurquoise,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+private fun String?.isNull meOrBlank(): Boolean = this == null || this.trim().isEmpty()
