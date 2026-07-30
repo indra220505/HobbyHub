@@ -3,8 +3,10 @@ package com.hobbyhub.exception
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import java.sql.SQLException
 
 data class ErrorResponse(
     val message: String,
@@ -30,6 +32,23 @@ class GlobalExceptionHandler {
         return ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
             .body(ErrorResponse(message = ex.message ?: "Status tidak valid."))
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException::class)
+    fun handleValidationExceptions(ex: MethodArgumentNotValidException): ResponseEntity<ErrorResponse> {
+        val errors = ex.bindingResult.fieldErrors.joinToString(", ") { "${it.field}: ${it.defaultMessage}" }
+        log.warn("Validation Error: {}", errors)
+        return ResponseEntity
+            .status(HttpStatus.BAD_REQUEST)
+            .body(ErrorResponse(message = errors))
+    }
+
+    @ExceptionHandler(SQLException::class)
+    fun handleDatabaseExceptions(ex: SQLException): ResponseEntity<ErrorResponse> {
+        log.error("Database Error: ", ex)
+        return ResponseEntity
+            .status(HttpStatus.SERVICE_UNAVAILABLE)
+            .body(ErrorResponse(message = "Layanan database sedang tidak tersedia sementara."))
     }
 
     @ExceptionHandler(Exception::class)
