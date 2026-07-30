@@ -15,7 +15,12 @@ class DataSourceConfig(
     @Value("\${DATABASE_URL:}") private val databaseUrl: String,
     @Value("\${SPRING_DATASOURCE_URL:}") private val springUrl: String,
     @Value("\${SPRING_DATASOURCE_USERNAME:}") private val springUsername: String,
-    @Value("\${SPRING_DATASOURCE_PASSWORD:}") private val springPassword: String
+    @Value("\${SPRING_DATASOURCE_PASSWORD:}") private val springPassword: String,
+    @Value("\${PGHOST:}") private val pgHost: String,
+    @Value("\${PGPORT:5432}") private val pgPort: String,
+    @Value("\${PGDATABASE:}") private val pgDatabase: String,
+    @Value("\${PGUSER:}") private val pgUser: String,
+    @Value("\${PGPASSWORD:}") private val pgPassword: String
 ) {
     private val log = LoggerFactory.getLogger(DataSourceConfig::class.java)
 
@@ -24,8 +29,9 @@ class DataSourceConfig(
     fun dataSource(): DataSource {
         val config = HikariConfig()
 
+        // 1. Try Railway DATABASE_URL (postgresql://user:pass@host:port/db)
         if (databaseUrl.isNotBlank() && (databaseUrl.startsWith("postgres://") || databaseUrl.startsWith("postgresql://"))) {
-            log.info("Detected DATABASE_URL from Railway environment. Parsing to JDBC format...")
+            log.info("✅ Detected DATABASE_URL from Railway environment. Parsing to JDBC format...")
             try {
                 val dbUri = URI(databaseUrl)
                 val userInfo = dbUri.userInfo?.split(":")
@@ -47,19 +53,34 @@ class DataSourceConfig(
                 config.username = username
                 config.password = password
                 config.driverClassName = "org.postgresql.Driver"
-                log.info("Successfully configured HikariCP DataSource from DATABASE_URL ($host:$port)")
+                log.info("✅ Successfully configured HikariCP DataSource from DATABASE_URL ($host:$port)")
             } catch (e: Exception) {
-                log.error("Failed to parse DATABASE_URL: ${e.message}", e)
+                log.error("❌ Failed to parse DATABASE_URL: ${e.message}", e)
                 throw RuntimeException("Invalid DATABASE_URL format", e)
             }
-        } else if (springUrl.isNotBlank()) {
-            log.info("Using standard SPRING_DATASOURCE_URL configuration.")
+        } 
+        // 2. Try individual Railway Postgres variables (PGHOST, PGUSER, etc.)
+        else if (pgHost.isNotBlank() && pgDatabase.isNotBlank()) {
+            log.info("✅ Detected Railway PGHOST ($pgHost) and PGDATABASE ($pgDatabase). Constructing JDBC URL...")
+            config.jdbcUrl = "jdbc:postgresql://$pgHost:$pgPort/$pgDatabase?sslmode=require"
+            config.username = pgUser
+            config.password = pgPassword
+            config.driverClassName = "org.postgresql.Driver"
+        }
+        // 3. Try standard SPRING_DATASOURCE_URL
+        else if (springUrl.isNotBlank()) {
+            log.info("✅ Using standard SPRING_DATASOURCE_URL configuration.")
             config.jdbcUrl = springUrl
             config.username = springUsername
             config.password = springPassword
             config.driverClassName = "org.postgresql.Driver"
-        } else {
-            log.warn("No DATABASE_URL or SPRING_DATASOURCE_URL found! Falling back to default Spring auto-configuration.")
+        } 
+        // 4. Fallback (LOCAL DEV ONLY)
+        else {
+            log.error("==========================================================================")
+            log.error("⚠️ CRITICAL WARNING: NO DATABASE_URL OR POSTGRES VARIABLES FOUND IN RAILWAY! ⚠️")
+            log.error("Please add 'DATABASE_URL' variable in Railway Dashboard referencing PostgreSQL.")
+            log.error("==========================================================================")
             config.jdbcUrl = "jdbc:postgresql://localhost:5432/hobbyhub?sslmode=require"
             config.username = "postgres"
             config.password = "postgres"
