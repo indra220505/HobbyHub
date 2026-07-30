@@ -171,12 +171,12 @@ class WebRtcClient(
         try {
             val factory = peerConnectionFactory ?: return
             
-            // Mandatory Audio constraints
+            // Audio constraints (Optional for maximum device & emulator compatibility)
             val audioConstraints = MediaConstraints()
-            audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
-            audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
-            audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
-            audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "true"))
+            audioConstraints.optional.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
+            audioConstraints.optional.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
+            audioConstraints.optional.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
+            audioConstraints.optional.add(MediaConstraints.KeyValuePair("googHighpassFilter", "true"))
 
             localAudioSource = factory.createAudioSource(audioConstraints)
             localAudioTrack = factory.createAudioTrack("local_audio_track_$userId", localAudioSource)
