@@ -17,11 +17,11 @@ class EnvValidationConfig(
     fun validateEnvVars() {
         var hasErrors = false
 
-        if (dbUrl.isBlank()) {
-            log.error("CRITICAL ERROR: DATABASE_URL environment variable is not set!")
+        if (dbUrl.isBlank() || dbUrl.contains("\${PGHOST}")) {
+            log.error("CRITICAL ERROR: Database variables (PGHOST, PGPORT, etc.) are not injected from Railway!")
             hasErrors = true
         } else if (!dbUrl.startsWith("jdbc:")) {
-            log.error("CRITICAL ERROR: DATABASE_URL must start with 'jdbc:' (e.g. jdbc:postgresql://...)")
+            log.error("CRITICAL ERROR: Database URL must start with 'jdbc:' (Current: $dbUrl)")
             hasErrors = true
         }
 
