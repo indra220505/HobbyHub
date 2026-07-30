@@ -4,7 +4,12 @@ spring:
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 5
-      connection-timeout: 20000
+      connection-timeout: 60000       # Tunggu hingga 60 detik jika Neon sedang cold start
+      max-lifetime: 1800000           # 30 menit (standar AWS/Cloud)
+      idle-timeout: 600000            # 10 menit
+      leak-detection-threshold: 30000 # Mendeteksi jika koneksi nyangkut lebih dari 30s
+      initialization-fail-timeout: 0  # Aplikasi tetap hidup biarpun DB belum 100% siap saat boot
+      validation-timeout: 5000        # Validasi koneksi aktif (5s)
 
   jpa:
     hibernate:
@@ -17,6 +22,9 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: true
+    connect-retries: 10               # Retry maksimal 10x jika koneksi DB gagal
+    connect-retries-interval: 5       # Jeda retry 5 detik (total = 50 detik nunggu DB bangun)
+
 
 server:
   port: ${PORT:8080}
@@ -36,3 +44,21 @@ cloud:
     s3:
       endpoint: ${S3_ENDPOINT:none}
       bucket-name: ${S3_BUCKET_NAME:hobbyhub-media}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when_authorized
+
+logging:
+  level:
+    root: INFO
+    org.springframework.web: ERROR
+    org.hibernate.SQL: ERROR
+    com.zaxxer.hikari: INFO
