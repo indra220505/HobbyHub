@@ -25,7 +25,11 @@ import com.hobbyhub.data.local.UserSessionManager
 import com.hobbyhub.model.Channel
 import com.hobbyhub.model.ChannelType
 import com.hobbyhub.model.Community
+import com.hobbyhub.data.remote.NetworkModule
 import com.hobbyhub.ui.theme.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +53,9 @@ fun CommunityDetailScreen(
     val isOwner = remember(currentUser, currentCommunity) {
         commDb.isOwnerOfCommunity(currentCommunity.id, currentUser.username)
     }
+
+    val coroutineScope = rememberCoroutineScope()
+    val communityApi = remember { NetworkModule.getCommunityApi(context) }
 
     Scaffold(
         topBar = {
@@ -234,10 +241,22 @@ fun CommunityDetailScreen(
                 confirmButton = {
                     Button(
                         onClick = {
-                            sessionManager.leaveCommunity(currentCommunity.id)
-                            showLeaveCommunityDialog = false
-                            Toast.makeText(context, "Kamu telah keluar dari komunitas", Toast.LENGTH_SHORT).show()
-                            onCommunityDeleted()
+                            coroutineScope.launch {
+                                try {
+                                    val response = withContext(Dispatchers.IO) { communityApi.leaveCommunity(currentCommunity.id) }
+                                    if (response.isSuccessful) {
+                                        sessionManager.leaveCommunity(currentCommunity.id)
+                                        showLeaveCommunityDialog = false
+                                        Toast.makeText(context, "Kamu telah keluar dari komunitas", Toast.LENGTH_SHORT).show()
+                                        onCommunityDeleted()
+                                    } else {
+                                        Toast.makeText(context, "Gagal keluar: ${response.code()}", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    Toast.makeText(context, "Gagal terhubung ke server", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = TertiaryCoral)
                     ) {

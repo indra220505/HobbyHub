@@ -51,4 +51,11 @@ object NetworkModule {
 
         return retrofit!!.create(AuthApi::class.java)
     }
+
+    fun getCommunityApi(context: Context): CommunityApi {
+        if (retrofit == null) {
+            getAuthApi(context) // Initialize retrofit
+        }
+        return retrofit!!.create(CommunityApi::class.java)
+    }
 }

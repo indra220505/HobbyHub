@@ -40,7 +40,12 @@ data class User(
     val createdAt: LocalDateTime = LocalDateTime.now(),
 
     @Column(nullable = false)
-    var updatedAt: LocalDateTime = LocalDateTime.now()
+    var updatedAt: LocalDateTime = LocalDateTime.now(),
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "user_communities", joinColumns = [JoinColumn(name = "user_id")])
+    @Column(name = "community_id")
+    var joinedCommunities: MutableSet<String> = mutableSetOf()
 )
 
 interface UserRepository : JpaRepository<User, UUID> {

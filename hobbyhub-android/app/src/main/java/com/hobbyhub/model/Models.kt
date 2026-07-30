@@ -51,6 +51,8 @@ enum class ChannelType {
 
 data class ChatMessage(
     val id: String,
+    val senderId: String = "",
+    val senderUsername: String = "",
     val senderName: String,
     val senderAvatar: String,
     val senderBadge: RoleBadge?,

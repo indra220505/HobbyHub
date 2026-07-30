@@ -40,6 +40,8 @@ import java.io.IOException
 data class WsPayload(
     val id: String = "",
     val channelName: String = "",
+    val senderId: String = "",
+    val senderUsername: String = "",
     val senderName: String = "",
     val senderAvatar: String = "U",
     val senderBadge: String = "Member",
@@ -132,6 +134,8 @@ fun ChatScreen(
                                                 val safeAvatar = item.senderAvatar.ifBlank { item.senderName.take(1).ifBlank { "U" } }
                                                 val msg = ChatMessage(
                                                     id = item.id.ifBlank { "msg_${System.currentTimeMillis()}" },
+                                                    senderId = item.senderId,
+                                                    senderUsername = item.senderUsername,
                                                     senderName = item.senderName.ifBlank { "Member" },
                                                     senderAvatar = safeAvatar,
                                                     senderBadge = RoleBadge(item.senderBadge.ifBlank { "Member" }, "#6C5CE7"),
@@ -185,10 +189,27 @@ fun ChatScreen(
                                     messages.removeAll { it.id == payload.id }
                                     chatDb.deleteMessageFromChannel(channelName, payload.id)
                                 }
+                            } else if (payload.type == "USER_DELETED") {
+                                mainHandler.post {
+                                    val deletedUserId = payload.senderId
+                                    messages.forEachIndexed { index, msg ->
+                                        if (msg.senderId == deletedUserId) {
+                                            messages[index] = msg.copy(
+                                                senderId = "",
+                                                senderUsername = "",
+                                                senderName = "Pengguna Dihapus",
+                                                senderAvatar = "U"
+                                            )
+                                        }
+                                    }
+                                    chatDb.nullifyUserMessages(channelName, deletedUserId)
+                                }
                             } else {
                                 val safeAvatar = payload.senderAvatar.ifBlank { payload.senderName.take(1).ifBlank { "U" } }
                                 val newMsg = ChatMessage(
                                     id = payload.id.ifBlank { "msg_${System.currentTimeMillis()}" },
+                                    senderId = payload.senderId,
+                                    senderUsername = payload.senderUsername,
                                     senderName = payload.senderName.ifBlank { "Member" },
                                     senderAvatar = safeAvatar,
                                     senderBadge = RoleBadge(payload.senderBadge.ifBlank { "Member" }, "#6C5CE7"),
@@ -293,6 +314,8 @@ fun ChatScreen(
 
                             val newMsg = ChatMessage(
                                 id = msgId,
+                                senderId = currentUser.id,
+                                senderUsername = currentUser.username,
                                 senderName = currentUser.displayName,
                                 senderAvatar = currentAvatar,
                                 senderBadge = currentUser.roleBadge ?: RoleBadge("Member", "#6C5CE7"),
@@ -309,6 +332,8 @@ fun ChatScreen(
                                 val payload = WsPayload(
                                     id = msgId,
                                     channelName = channelName,
+                                    senderId = currentUser.id,
+                                    senderUsername = currentUser.username,
                                     senderName = currentUser.displayName,
                                     senderAvatar = currentAvatar,
                                     senderBadge = currentUser.roleBadge?.name ?: "Member",
@@ -376,7 +401,7 @@ fun ChatScreen(
                 items(items = messages, key = { it.id }) { msg ->
                     ChatMessageBubble(
                         msg = msg,
-                        isOwnerOrSelf = (msg.senderName == currentUser.displayName || msg.senderName.contains(currentUser.displayName, ignoreCase = true)),
+                        isOwnerOrSelf = (msg.senderId == currentUser.id),
                         onDeleteClick = { messageToDelete = msg }
                     )
                 }
@@ -385,28 +410,52 @@ fun ChatScreen(
 
         // Delete Confirmation Modal (CRUD Delete)
         messageToDelete?.let { targetMsg ->
+            val isOwner = (targetMsg.senderId == currentUser.id)
+
             AlertDialog(
                 onDismissRequest = { messageToDelete = null },
                 containerColor = SurfaceCard,
                 icon = { Icon(Icons.Default.DeleteForever, contentDescription = null, tint = TertiaryCoral, modifier = Modifier.size(36.dp)) },
-                title = { Text("Hapus Pesan Ini?", color = TextPrimary, fontWeight = FontWeight.Bold) },
+                title = { Text(if (isOwner) "Hapus Pesan Ini?" else "Hapus Untuk Saya?", color = TextPrimary, fontWeight = FontWeight.Bold) },
                 text = {
                     Text(
-                        "Apakah kamu yakin ingin menghapus pesan \"${targetMsg.content.take(40)}\"? Pesan akan terhapus dari channel ini untuk semua orang.",
+                        if (isOwner) "Apakah kamu yakin ingin menghapus pesan ini? Pesan dapat dihapus untuk semua orang atau hanya untukmu."
+                        else "Hapus pesan ini dari tampilanmu? (Pesan tetap terlihat oleh orang lain).",
                         color = TextMuted,
                         fontSize = 13.sp
                     )
                 },
                 confirmButton = {
-                    Button(
-                        onClick = {
-                            deleteMessageLocallyAndRemote(targetMsg)
-                            messageToDelete = null
-                            Toast.makeText(context, "Pesan telah dihapus", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = TertiaryCoral)
-                    ) {
-                        Text("Hapus Pesan", color = TextPrimary, fontWeight = FontWeight.Bold)
+                    Column {
+                        if (isOwner) {
+                            Button(
+                                onClick = {
+                                    deleteMessageLocallyAndRemote(targetMsg)
+                                    messageToDelete = null
+                                    Toast.makeText(context, "Pesan dihapus untuk semua orang", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = TertiaryCoral),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                            ) {
+                                Text("Hapus untuk Semua Orang", color = TextPrimary, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                mainHandler.post {
+                                    messages.removeAll { it.id == targetMsg.id }
+                                    chatDb.deleteMessageFromChannel(channelName, targetMsg.id)
+                                }
+                                messageToDelete = null
+                                Toast.makeText(context, "Pesan dihapus untuk Anda", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = ObsidianBg),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Hapus untuk Saya", color = TextPrimary, fontWeight = FontWeight.Bold)
+                        }
                     }
                 },
                 dismissButton = {
@@ -448,6 +497,13 @@ fun ChatMessageBubble(
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
                 )
+                Spacer(modifier = Modifier.width(4.dp))
+                val usernameDisplay = if (msg.senderUsername.isNotBlank()) "@${msg.senderUsername}" else "@user_${msg.senderId.takeLast(4)}"
+                Text(
+                    text = usernameDisplay,
+                    color = TextMuted,
+                    fontSize = 12.sp
+                )
                 Spacer(modifier = Modifier.width(6.dp))
                 msg.senderBadge?.let { badge ->
                     val badgeColor = remember(badge.colorHex) {
@@ -480,18 +536,16 @@ fun ChatMessageBubble(
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                if (isOwnerOrSelf) {
-                    IconButton(
-                        onClick = onDeleteClick,
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Hapus Pesan",
-                            tint = TertiaryCoral.copy(alpha = 0.7f),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                IconButton(
+                    onClick = onDeleteClick,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Hapus Pesan",
+                        tint = TertiaryCoral.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))

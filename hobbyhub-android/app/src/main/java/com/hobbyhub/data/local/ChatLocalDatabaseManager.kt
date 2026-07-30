@@ -31,6 +31,8 @@ class ChatLocalDatabaseManager(context: Context) {
                 messages.add(
                     ChatMessage(
                         id = obj.getString("id"),
+                        senderId = obj.optString("senderId", ""),
+                        senderUsername = obj.optString("senderUsername", ""),
                         senderName = obj.getString("senderName"),
                         senderAvatar = obj.optString("senderAvatar", "U"),
                         senderBadge = badge,
@@ -69,6 +71,8 @@ class ChatLocalDatabaseManager(context: Context) {
         for (msg in messages) {
             val obj = JSONObject().apply {
                 put("id", msg.id)
+                put("senderId", msg.senderId)
+                put("senderUsername", msg.senderUsername)
                 put("senderName", msg.senderName)
                 put("senderAvatar", msg.senderAvatar)
                 put("content", msg.content)
@@ -87,6 +91,25 @@ class ChatLocalDatabaseManager(context: Context) {
             array.put(obj)
         }
         prefs.edit().putString("chat_channel_$channelName", array.toString()).apply()
+    }
+
+    fun nullifyUserMessages(channelName: String, userId: String) {
+        val currentMessages = getMessagesForChannel(channelName).toMutableList()
+        var changed = false
+        for (i in currentMessages.indices) {
+            if (currentMessages[i].senderId == userId) {
+                currentMessages[i] = currentMessages[i].copy(
+                    senderId = "",
+                    senderUsername = "",
+                    senderName = "Pengguna Dihapus",
+                    senderAvatar = "U"
+                )
+                changed = true
+            }
+        }
+        if (changed) {
+            saveMessagesForChannel(channelName, currentMessages)
+        }
     }
 
     fun resetAllChatData() {

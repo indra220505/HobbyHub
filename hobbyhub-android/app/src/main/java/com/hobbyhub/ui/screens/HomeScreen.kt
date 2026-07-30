@@ -26,9 +26,12 @@ import androidx.compose.ui.unit.sp
 import com.hobbyhub.data.local.CommunityRegistryManager
 import com.hobbyhub.data.local.UserSessionManager
 import com.hobbyhub.model.Community
+import com.hobbyhub.model.Community
 import com.hobbyhub.ui.theme.*
-
-@OptIn(ExperimentalMaterial3Api::class)
+import com.hobbyhub.data.remote.NetworkModule
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 @Composable
 fun HomeScreen(
     onCommunityClick: (Community) -> Unit = {}
@@ -40,6 +43,26 @@ fun HomeScreen(
 
     var allCommunities by remember { mutableStateOf(commDb.getAllCommunities()) }
     var joinedIds by remember { mutableStateOf(sessionManager.getJoinedCommunityIds()) }
+    val coroutineScope = rememberCoroutineScope()
+    val communityApi = remember { NetworkModule.getCommunityApi(context) }
+
+    LaunchedEffect(Unit) {
+        try {
+            val response = withContext(Dispatchers.IO) { communityApi.getJoinedCommunities() }
+            if (response.isSuccessful) {
+                response.body()?.let { serverJoined ->
+                    // Update local cache
+                    serverJoined.forEach { sessionManager.joinCommunity(it) }
+                    // If local cache had items not on server, maybe remove them? 
+                    // Let's just override it to sync exactly with server.
+                    sessionManager.setJoinedCommunityIds(serverJoined)
+                    joinedIds = serverJoined
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     val categories = listOf("Semua", "Programming", "AI / ML", "Gaming", "Fotografi", "Trading", "Music")
     var selectedCategory by remember { mutableStateOf("Semua") }
@@ -202,11 +225,25 @@ fun HomeScreen(
                         isJoined = isJoined,
                         onJoinClick = {
                             if (!isJoined) {
-                                sessionManager.joinCommunity(comm.id)
-                                joinedIds = sessionManager.getJoinedCommunityIds()
-                                Toast.makeText(context, "Berhasil bergabung dengan ${comm.name}!", Toast.LENGTH_SHORT).show()
+                                coroutineScope.launch {
+                                    try {
+                                        val response = withContext(Dispatchers.IO) { communityApi.joinCommunity(comm.id) }
+                                        if (response.isSuccessful) {
+                                            sessionManager.joinCommunity(comm.id)
+                                            joinedIds = sessionManager.getJoinedCommunityIds()
+                                            Toast.makeText(context, "Berhasil bergabung dengan ${comm.name}!", Toast.LENGTH_SHORT).show()
+                                            onCommunityClick(comm)
+                                        } else {
+                                            Toast.makeText(context, "Gagal bergabung: ${response.code()}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                        Toast.makeText(context, "Gagal terhubung ke server", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            } else {
+                                onCommunityClick(comm)
                             }
-                            onCommunityClick(comm)
                         }
                     )
                 }

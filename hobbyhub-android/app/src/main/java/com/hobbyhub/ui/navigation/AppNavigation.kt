@@ -211,11 +211,16 @@ fun AppNavigation() {
                                     } else {
                                         val errStr = response.errorBody()?.string() ?: ""
                                         val message = try {
-                                            org.json.JSONObject(errStr).optString("message", "Gagal mendaftar. Silakan coba lagi.")
+                                            val jsonObj = org.json.JSONObject(errStr)
+                                            jsonObj.optString("message", jsonObj.optString("error", "Username atau email sudah digunakan."))
                                         } catch (_: Exception) {
-                                            "Gagal mendaftar. Silakan periksa koneksi internet Anda."
+                                            "Gagal mendaftar. Silakan coba lagi."
                                         }
                                         android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                                        if (response.code() == 400 || response.code() == 409) {
+                                            // Kembali ke halaman registrasi agar bisa mengubah username
+                                            currentScreen = "register"
+                                        }
                                     }
                                 } catch (e: Exception) {
                                     e.printStackTrace()
@@ -454,6 +459,40 @@ fun AppNavigation() {
                         onLogoutClick = {
                             sessionManager.logout()
                             currentScreen = "login"
+                        },
+                        onDeleteAccountClick = {
+                            coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                try {
+                                    val token = sessionManager.getAccessToken()
+                                    if (token != null) {
+                                        val httpUrl = com.hobbyhub.BuildConfig.API_BASE_URL + "api/users/me"
+                                        val client = okhttp3.OkHttpClient.Builder().build()
+                                        val request = okhttp3.Request.Builder()
+                                            .url(httpUrl)
+                                            .delete()
+                                            .addHeader("Authorization", "Bearer $token")
+                                            .build()
+                                        val response = client.newCall(request).execute()
+                                        if (response.isSuccessful) {
+                                            // Handle success (logout and redirect)
+                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                android.widget.Toast.makeText(context, "Akun berhasil dihapus", android.widget.Toast.LENGTH_SHORT).show()
+                                                sessionManager.logout()
+                                                currentScreen = "login"
+                                            }
+                                        } else {
+                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                android.widget.Toast.makeText(context, "Gagal menghapus akun: ${response.code}", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        android.widget.Toast.makeText(context, "Terjadi kesalahan", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
                         }
                     )
                 }

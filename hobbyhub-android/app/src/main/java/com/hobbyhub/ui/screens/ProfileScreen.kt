@@ -35,10 +35,12 @@ import com.hobbyhub.ui.theme.*
 fun ProfileScreen(
     user: User = MockDataRepository.currentUser,
     onCommunityClick: (Community) -> Unit = {},
-    onLogoutClick: () -> Unit = {}
+    onLogoutClick: () -> Unit = {},
+    onDeleteAccountClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val commDb = remember { CommunityRegistryManager(context) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     // Memfilter HANYA komunitas yang DIBUAT (DIMILIKI) oleh user saat ini
     val createdCommunities = remember(user, commDb) {
@@ -222,14 +224,51 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedButton(
                 onClick = onLogoutClick,
-                colors = ButtonDefaults.buttonColors(contentColor = TertiaryCoral),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Default.ExitToApp, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Keluar dari Akun")
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = { showDeleteDialog = true },
+                colors = ButtonDefaults.buttonColors(containerColor = TertiaryCoral),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.White)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Hapus Akun Permanen", color = Color.White)
+            }
         }
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            containerColor = SurfaceCard,
+            title = { Text("Hapus Akun Permanen", color = TextPrimary, fontWeight = FontWeight.Bold) },
+            text = { Text("Tindakan ini tidak dapat dibatalkan. Semua data kamu, termasuk pesan dan profil, akan dihapus. Yakin ingin melanjutkan?", color = TextMuted) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteDialog = false
+                        onDeleteAccountClick()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = TertiaryCoral)
+                ) {
+                    Text("Hapus", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Batal", color = TextMuted)
+                }
+            }
+        )
     }
 }
 

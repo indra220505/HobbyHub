@@ -1,8 +1,10 @@
 package com.hobbyhub.domain.community
 
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.bind.annotation.*
+import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.http.ResponseEntity
+import com.hobbyhub.domain.user.UserRepository
+import java.util.UUID
 
 data class CommunityResponse(
     val id: String,
@@ -16,7 +18,37 @@ data class CommunityResponse(
 
 @RestController
 @RequestMapping("/api/v1/communities")
-class CommunityController {
+class CommunityController(
+    private val userRepository: UserRepository
+) {
+
+    @PostMapping("/{id}/join")
+    fun joinCommunity(@PathVariable id: String): ResponseEntity<Void> {
+        val auth = SecurityContextHolder.getContext().authentication
+        val userId = UUID.fromString(auth.name)
+        val user = userRepository.findById(userId).orElseThrow()
+        user.joinedCommunities.add(id)
+        userRepository.save(user)
+        return ResponseEntity.ok().build()
+    }
+
+    @DeleteMapping("/{id}/leave")
+    fun leaveCommunity(@PathVariable id: String): ResponseEntity<Void> {
+        val auth = SecurityContextHolder.getContext().authentication
+        val userId = UUID.fromString(auth.name)
+        val user = userRepository.findById(userId).orElseThrow()
+        user.joinedCommunities.remove(id)
+        userRepository.save(user)
+        return ResponseEntity.ok().build()
+    }
+
+    @GetMapping("/joined")
+    fun getJoinedCommunities(): ResponseEntity<Set<String>> {
+        val auth = SecurityContextHolder.getContext().authentication
+        val userId = UUID.fromString(auth.name)
+        val user = userRepository.findById(userId).orElseThrow()
+        return ResponseEntity.ok(user.joinedCommunities)
+    }
 
     @GetMapping
     fun getTrendingCommunities(): List<CommunityResponse> {

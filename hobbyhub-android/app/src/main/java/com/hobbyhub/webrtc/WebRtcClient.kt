@@ -88,7 +88,24 @@ class WebRtcClient(
                     am.isSpeakerphoneOn = true
                 }
 
-                Log.d(TAG, "AudioManager configured: MODE_IN_COMMUNICATION, Speakerphone ON")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    val focusRequest = android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+                        .setAudioAttributes(
+                            android.media.AudioAttributes.Builder()
+                                .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                                .build()
+                        )
+                        .setAcceptsDelayedFocusGain(true)
+                        .setOnAudioFocusChangeListener { }
+                        .build()
+                    am.requestAudioFocus(focusRequest)
+                } else {
+                    @Suppress("DEPRECATION")
+                    am.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+                }
+
+                Log.d(TAG, "AudioManager configured: MODE_IN_COMMUNICATION, Speakerphone ON, AudioFocus Requested")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up AudioManager", e)
@@ -416,31 +433,43 @@ class WebRtcClient(
             }
         } catch (_: Exception) {}
 
-        peerConnections.forEach { (_, pc) -> 
-            try { pc.close() } catch (_: Exception) {}
-        }
+        val connectionsToClose = peerConnections.values.toList()
         peerConnections.clear()
         
-        remoteAudioTracks.forEach { (_, track) ->
-            try { track.setEnabled(false) } catch (_: Exception) {}
-        }
+        val tracksToDisable = remoteAudioTracks.values.toList()
         remoteAudioTracks.clear()
         pendingIceCandidates.clear()
         
-        try { localAudioSource?.dispose() } catch (_: Exception) {}
+        val sourceToDispose = localAudioSource
         localAudioSource = null
         
-        try { localAudioTrack?.dispose() } catch (_: Exception) {}
+        val localTrackToDispose = localAudioTrack
         localAudioTrack = null
         
-        try { audioDeviceModule?.release() } catch (_: Exception) {}
+        val audioDeviceToRelease = audioDeviceModule
         audioDeviceModule = null
 
-        try { peerConnectionFactory?.dispose() } catch (_: Exception) {}
+        val factoryToDispose = peerConnectionFactory
         peerConnectionFactory = null
         
-        try { rootEglBase?.release() } catch (_: Exception) {}
+        val eglBaseToRelease = rootEglBase
         rootEglBase = null
+
+        // JNI disposal is heavily blocking and crash-prone on main thread. Run in background!
+        Thread {
+            try {
+                tracksToDisable.forEach { try { it.setEnabled(false) } catch (_: Exception) {} }
+                connectionsToClose.forEach { try { it.close() } catch (_: Exception) {} }
+                try { sourceToDispose?.dispose() } catch (_: Exception) {}
+                try { localTrackToDispose?.dispose() } catch (_: Exception) {}
+                try { audioDeviceToRelease?.release() } catch (_: Exception) {}
+                try { factoryToDispose?.dispose() } catch (_: Exception) {}
+                try { eglBaseToRelease?.release() } catch (_: Exception) {}
+                Log.d(TAG, "WebRTC resources successfully disposed in background thread")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error disposing WebRTC resources in background thread", e)
+            }
+        }.start()
     }
 
     open class SdpObserverAdapter : SdpObserver {

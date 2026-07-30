@@ -13,12 +13,14 @@ import java.util.concurrent.CopyOnWriteArrayList
 data class WsChatMessage(
     val id: String = "msg_${System.currentTimeMillis()}",
     val channelName: String = "general",
+    val senderId: String = "",
+    val senderUsername: String = "",
     val senderName: String = "User",
     val senderAvatar: String = "U",
     val senderBadge: String = "Member",
     val content: String = "",
     val timestamp: String = "Baru saja",
-    val type: String = "CHAT" // "CHAT" or "DELETE"
+    val type: String = "CHAT" // "CHAT" or "DELETE" or "USER_DELETED"
 )
 
 @Component
@@ -55,6 +57,32 @@ class ChatHandler(
             broadcastToChannel(channelName, deleteNotification)
         }
         return removed
+    }
+
+    fun deleteUserMessages(userId: String) {
+        log.info("Deleting all messages for user: $userId")
+        channelHistory.forEach { (channelName, history) ->
+            var changed = false
+            for (i in history.indices) {
+                if (history[i].senderId == userId) {
+                    history[i] = history[i].copy(
+                        senderId = "",
+                        senderUsername = "",
+                        senderName = "Pengguna Dihapus",
+                        senderAvatar = "U"
+                    )
+                    changed = true
+                }
+            }
+            if (changed) {
+                val deleteNotification = WsChatMessage(
+                    channelName = channelName,
+                    senderId = userId,
+                    type = "USER_DELETED"
+                )
+                broadcastToChannel(channelName, deleteNotification)
+            }
+        }
     }
 
     private fun broadcastToChannel(channelName: String, msg: WsChatMessage) {

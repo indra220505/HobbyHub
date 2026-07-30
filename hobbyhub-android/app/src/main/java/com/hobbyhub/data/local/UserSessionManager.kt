@@ -107,6 +107,10 @@ class UserSessionManager(context: Context) {
         return prefs.getStringSet(KEY_JOINED_COMMUNITIES, emptySet()) ?: emptySet()
     }
 
+    fun setJoinedCommunityIds(ids: Set<String>) {
+        prefs.edit().putStringSet(KEY_JOINED_COMMUNITIES, ids).apply()
+    }
+
     fun joinCommunity(communityId: String) {
         val current = getJoinedCommunityIds().toMutableSet()
         current.add(communityId)
