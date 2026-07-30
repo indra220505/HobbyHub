@@ -181,15 +181,25 @@ fun EmailVerificationScreen(
                     successMessage = null
                     scope.launch {
                         try {
+                            val sessionManager = com.hobbyhub.data.local.UserSessionManager(context)
+                            val targetEmail = email.ifBlank { sessionManager.getSessionEmail() }
+                            
+                            if (targetEmail.isBlank()) {
+                                errorMessage = "Email tidak terdeteksi. Silakan Login kembali."
+                                isLoading = false
+                                return@launch
+                            }
+
                             val api = NetworkModule.getAuthApi(context)
-                            val response = api.resendOtp(ResendOtpRequest(email.trim()))
+                            val response = api.resendOtp(ResendOtpRequest(targetEmail.trim()))
                             if (response.isSuccessful) {
-                                successMessage = "Kode OTP baru telah dikirim ke email Anda!"
+                                successMessage = "Kode OTP baru telah dikirim!"
                                 otpInput = ""
                                 canResend = false
                                 cooldownSeconds = 60
                             } else {
-                                errorMessage = "Gagal mengirim ulang OTP. Silakan coba beberapa saat lagi."
+                                val errStr = response.errorBody()?.string() ?: ""
+                                errorMessage = if (errStr.isNotBlank()) errStr else "Gagal mengirim ulang OTP."
                             }
                         } catch (e: Exception) {
                             errorMessage = "Kesalahan jaringan: ${e.message}"

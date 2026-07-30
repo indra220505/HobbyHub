@@ -11,12 +11,25 @@ import org.springframework.stereotype.Service
 @Service
 class EmailService(
     private val mailSender: JavaMailSender,
-    @Value("\${spring.mail.username:hobbyhub.auth@gmail.com}") private val fromEmail: String
+    @Value("\${spring.mail.username:hobbyhub.auth@gmail.com}") private val fromEmail: String,
+    @Value("\${spring.mail.password:none}") private val mailPassword: String
 ) {
     private val log = LoggerFactory.getLogger(EmailService::class.java)
 
     @Async
     fun sendOtpEmail(toEmail: String, otpCode: String) {
+        val cleanToEmail = toEmail.trim().lowercase()
+
+        // Check if SMTP password is placeholder
+        if (mailPassword == "none" || mailPassword.isBlank()) {
+            log.warn("==========================================================================")
+            log.warn("⚠️ SMTP PASSWORD NOT CONFIGURED IN RAILWAY VARIABLES! ⚠️")
+            log.warn("Real emails CANNOT be delivered to Gmail inbox until SPRING_MAIL_PASSWORD is set.")
+            log.warn("VERIFICATION OTP CODE FOR [{}]: [{}]", cleanToEmail, otpCode)
+            log.warn("==========================================================================")
+            return
+        }
+
         val subject = "$otpCode adalah Kode Verifikasi HobbyHub Anda"
         val htmlContent = """
             <!DOCTYPE html>
@@ -39,7 +52,7 @@ class EmailService(
                     <div class="logo">HobbyHub</div>
                     <div class="tagline">Komunitas Berbasis Minat & Hobi</div>
                     <div class="title">Kode Verifikasi Anda</div>
-                    <p style="color: #cbd5e1; font-size: 14px; margin: 0;">Gunakan kode di bawah ini untuk memverifikasi akun HobbyHub Anda:</p>
+                    <p style="color: #cbd5e1; font-size: 14px; margin: 0;">Gunakan kode 6 digit di bawah ini untuk memverifikasi akun HobbyHub Anda:</p>
                     <div class="otp-box">$otpCode</div>
                     <div class="expiry">⏱ Kode berlaku selama 5 menit.</div>
                     <div class="footer">
@@ -55,19 +68,15 @@ class EmailService(
             val message: MimeMessage = mailSender.createMimeMessage()
             val helper = MimeMessageHelper(message, true, "UTF-8")
             helper.setFrom(fromEmail, "HobbyHub Support")
-            helper.setTo(toEmail)
+            helper.setTo(cleanToEmail)
             helper.setSubject(subject)
             helper.setText(htmlContent, true)
 
             mailSender.send(message)
-            log.info("Successfully sent OTP email to {}", toEmail)
+            log.info("SUCCESSFULLY SENT OTP EMAIL via SMTP to [{}]", cleanToEmail)
         } catch (e: Exception) {
-            log.error("Failed to send OTP email via SMTP to {}: {}. Logging OTP locally as fallback.", toEmail, e.message)
+            log.error("SMTP DISPATCH ERROR for [{}]: {}", cleanToEmail, e.message, e)
+            log.info("FALLBACK OTP LOG FOR [{}]: [{}]", cleanToEmail, otpCode)
         }
-
-        // Always print to log for easy debugging in Railway
-        log.info("==================================================")
-        log.info("VERIFICATION KODE OTP FOR [{}]: [{}]", toEmail, otpCode)
-        log.info("==================================================")
     }
 }

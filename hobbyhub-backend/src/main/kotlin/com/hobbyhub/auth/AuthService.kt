@@ -23,11 +23,15 @@ class AuthService(
         val emailClean = request.email.trim().lowercase()
         val usernameClean = request.username.trim().lowercase()
 
+        if (emailClean.isBlank() || request.passwordHash.isBlank() || usernameClean.isBlank()) {
+            throw IllegalArgumentException("Semua kolom registrasi wajib diisi!")
+        }
+
         if (userRepository.existsByEmail(emailClean)) {
-            throw IllegalArgumentException("Email sudah terdaftar!")
+            throw IllegalArgumentException("Email '$emailClean' sudah terdaftar! Silakan Login atau Reset Password.")
         }
         if (userRepository.existsByUsername(usernameClean)) {
-            throw IllegalArgumentException("Username sudah digunakan!")
+            throw IllegalArgumentException("Username '$usernameClean' sudah digunakan. Silakan pilih username lain.")
         }
 
         val otpCode = generateVerificationCode()
@@ -65,7 +69,7 @@ class AuthService(
         }
 
         if (!user.isVerified) {
-            throw IllegalArgumentException("Email belum diverifikasi. Silakan masukkan kode OTP verifikasi.")
+            throw IllegalArgumentException("Email belum diverifikasi. Silakan masukkan kode OTP yang telah dikirim ke email Anda.")
         }
 
         val token = jwtTokenProvider.generateAccessToken(user.id!!, user.email, user.username)
@@ -77,6 +81,10 @@ class AuthService(
     @Transactional
     fun verifyEmail(request: VerifyEmailRequest): AuthResponse {
         val emailClean = request.email.trim().lowercase()
+        if (emailClean.isBlank()) {
+            throw IllegalArgumentException("Alamat email tidak boleh kosong.")
+        }
+
         val user = userRepository.findByEmail(emailClean)
             ?: throw IllegalArgumentException("Pengguna tidak ditemukan.")
 
@@ -108,11 +116,17 @@ class AuthService(
     @Transactional
     fun resendOtp(request: ResendOtpRequest): AuthResponse {
         val emailClean = request.email.trim().lowercase()
+        if (emailClean.isBlank()) {
+            throw IllegalArgumentException("Alamat email tidak boleh kosong untuk mengirim ulang OTP.")
+        }
+
         val user = userRepository.findByEmail(emailClean)
-            ?: throw IllegalArgumentException("Pengguna tidak ditemukan.")
+            ?: throw IllegalArgumentException("Pengguna dengan email '$emailClean' tidak ditemukan.")
 
         if (user.isVerified) {
-            throw IllegalArgumentException("Email sudah terverifikasi sebelumnya.")
+            val token = jwtTokenProvider.generateAccessToken(user.id!!, user.email, user.username)
+            val refreshToken = jwtTokenProvider.generateRefreshToken(user.id)
+            return AuthResponse(token, refreshToken, toUserDto(user))
         }
 
         val newOtpCode = generateVerificationCode()
