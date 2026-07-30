@@ -117,38 +117,49 @@ class WebRtcClient(
             rootEglBase = EglBase.create()
             val options = PeerConnectionFactory.Options()
 
-            // Initialize JavaAudioDeviceModule for crystal clear hardware audio processing
-            audioDeviceModule = JavaAudioDeviceModule.builder(context)
-                .setUseHardwareAcousticEchoCanceler(true)
-                .setUseHardwareNoiseSuppressor(true)
-                .setAudioRecordErrorCallback(object : JavaAudioDeviceModule.AudioRecordErrorCallback {
-                    override fun onWebRtcAudioRecordInitError(errorMessage: String?) {
-                        Log.e(TAG, "AudioRecordInitError: $errorMessage")
-                    }
-                    override fun onWebRtcAudioRecordStartError(errorCode: JavaAudioDeviceModule.AudioRecordStartErrorCode?, errorMessage: String?) {
-                        Log.e(TAG, "AudioRecordStartError: $errorMessage")
-                    }
-                    override fun onWebRtcAudioRecordError(errorMessage: String?) {
-                        Log.e(TAG, "AudioRecordError: $errorMessage")
-                    }
-                })
-                .setAudioTrackErrorCallback(object : JavaAudioDeviceModule.AudioTrackErrorCallback {
-                    override fun onWebRtcAudioTrackInitError(errorMessage: String?) {
-                        Log.e(TAG, "AudioTrackInitError: $errorMessage")
-                    }
-                    override fun onWebRtcAudioTrackStartError(errorCode: JavaAudioDeviceModule.AudioTrackStartErrorCode?, errorMessage: String?) {
-                        Log.e(TAG, "AudioTrackStartError: $errorMessage")
-                    }
-                    override fun onWebRtcAudioTrackError(errorMessage: String?) {
-                        Log.e(TAG, "AudioTrackError: $errorMessage")
-                    }
-                })
-                .createAudioDeviceModule()
+            // Safe JavaAudioDeviceModule initialization checking hardware support (Crucial for Emulator stability!)
+            audioDeviceModule = try {
+                val useHardwareAec = try { JavaAudioDeviceModule.isBuiltInAcousticEchoCancelerSupported() } catch (_: Throwable) { false }
+                val useHardwareNs = try { JavaAudioDeviceModule.isBuiltInNoiseSuppressorSupported() } catch (_: Throwable) { false }
+                
+                Log.d(TAG, "Hardware Audio HAL Support - AEC: $useHardwareAec, NS: $useHardwareNs")
 
-            peerConnectionFactory = PeerConnectionFactory.builder()
+                JavaAudioDeviceModule.builder(context)
+                    .setUseHardwareAcousticEchoCanceler(useHardwareAec)
+                    .setUseHardwareNoiseSuppressor(useHardwareNs)
+                    .setAudioRecordErrorCallback(object : JavaAudioDeviceModule.AudioRecordErrorCallback {
+                        override fun onWebRtcAudioRecordInitError(errorMessage: String?) {
+                            Log.e(TAG, "AudioRecordInitError: $errorMessage")
+                        }
+                        override fun onWebRtcAudioRecordStartError(errorCode: JavaAudioDeviceModule.AudioRecordStartErrorCode?, errorMessage: String?) {
+                            Log.e(TAG, "AudioRecordStartError: $errorMessage")
+                        }
+                        override fun onWebRtcAudioRecordError(errorMessage: String?) {
+                            Log.e(TAG, "AudioRecordError: $errorMessage")
+                        }
+                    })
+                    .setAudioTrackErrorCallback(object : JavaAudioDeviceModule.AudioTrackErrorCallback {
+                        override fun onWebRtcAudioTrackInitError(errorMessage: String?) {
+                            Log.e(TAG, "AudioTrackInitError: $errorMessage")
+                        }
+                        override fun onWebRtcAudioTrackStartError(errorCode: JavaAudioDeviceModule.AudioTrackStartErrorCode?, errorMessage: String?) {
+                            Log.e(TAG, "AudioTrackStartError: $errorMessage")
+                        }
+                        override fun onWebRtcAudioTrackError(errorMessage: String?) {
+                            Log.e(TAG, "AudioTrackError: $errorMessage")
+                        }
+                    })
+                    .createAudioDeviceModule()
+            } catch (e: Throwable) {
+                Log.w(TAG, "Fallback: Unable to initialize hardware JavaAudioDeviceModule: ${e.message}")
+                null
+            }
+
+            val factoryBuilder = PeerConnectionFactory.builder()
                 .setOptions(options)
-                .setAudioDeviceModule(audioDeviceModule)
-                .createPeerConnectionFactory()
+            audioDeviceModule?.let { factoryBuilder.setAudioDeviceModule(it) }
+
+            peerConnectionFactory = factoryBuilder.createPeerConnectionFactory()
 
             createLocalAudioTrack()
         } catch (e: Exception) {
@@ -173,7 +184,7 @@ class WebRtcClient(
             localAudioTrack?.setVolume(1.0)
             Log.d(TAG, "Local Audio Track created successfully for user $userId")
         } catch (e: Exception) {
-            Log.e(TAG, "Error creating Local Audio Track (Check Mic Permission)", e)
+            Log.e(TAG, "Error creating Local Audio Track (Check Mic Permission / Audio HAL)", e)
         }
     }
 
