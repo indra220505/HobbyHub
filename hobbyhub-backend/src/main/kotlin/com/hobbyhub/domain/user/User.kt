@@ -3,13 +3,14 @@ package com.hobbyhub.domain.user
 import jakarta.persistence.*
 import org.springframework.data.jpa.repository.JpaRepository
 import java.time.LocalDateTime
+import java.util.UUID
 
 @Entity
 @Table(name = "users")
 data class User(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    val id: String? = null,
+    val id: UUID? = null,
 
     @Column(unique = true, nullable = false)
     val email: String,
@@ -41,7 +42,7 @@ data class User(
     var updatedAt: LocalDateTime = LocalDateTime.now()
 )
 
-interface UserRepository : JpaRepository<User, String> {
+interface UserRepository : JpaRepository<User, UUID> {
     fun findByEmail(email: String): User?
     fun findByUsername(username: String): User?
     fun existsByEmail(email: String): Boolean

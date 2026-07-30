@@ -152,7 +152,7 @@ class AuthService(
 
     private fun toUserDto(user: User): UserDto {
         return UserDto(
-            id = user.id!!,
+            id = user.id.toString(),
             email = user.email,
             username = user.username,
             displayName = user.displayName,
