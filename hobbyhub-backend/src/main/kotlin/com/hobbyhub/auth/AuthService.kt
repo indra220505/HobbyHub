@@ -2,6 +2,7 @@ package com.hobbyhub.auth
 
 import com.hobbyhub.domain.user.User
 import com.hobbyhub.domain.user.UserRepository
+import com.hobbyhub.exception.UserAlreadyExistsException
 import com.hobbyhub.security.JwtTokenProvider
 import com.hobbyhub.service.EmailService
 import org.slf4j.LoggerFactory
@@ -20,6 +21,34 @@ class AuthService(
 ) {
     private val log = LoggerFactory.getLogger(AuthService::class.java)
 
+    @Transactional(readOnly = true)
+    fun checkEmailAvailability(email: String): CheckAvailabilityResponse {
+        val emailClean = email.trim().lowercase()
+        if (emailClean.isBlank()) {
+            return CheckAvailabilityResponse(available = false, message = "Alamat email tidak boleh kosong.")
+        }
+        val isTaken = userRepository.existsByEmail(emailClean)
+        return if (isTaken) {
+            CheckAvailabilityResponse(available = false, message = "Email sudah terdaftar. Silakan gunakan email lain atau Login.")
+        } else {
+            CheckAvailabilityResponse(available = true, message = "Email tersedia.")
+        }
+    }
+
+    @Transactional(readOnly = true)
+    fun checkUsernameAvailability(username: String): CheckAvailabilityResponse {
+        val usernameClean = username.trim().lowercase()
+        if (usernameClean.isBlank()) {
+            return CheckAvailabilityResponse(available = false, message = "Username tidak boleh kosong.")
+        }
+        val isTaken = userRepository.existsByUsername(usernameClean)
+        return if (isTaken) {
+            CheckAvailabilityResponse(available = false, message = "Username sudah digunakan. Pilih username lain.")
+        } else {
+            CheckAvailabilityResponse(available = true, message = "Username tersedia.")
+        }
+    }
+
     @Transactional
     fun register(request: RegisterRequest): AuthResponse {
         val emailClean = request.email.trim().lowercase()
@@ -30,10 +59,10 @@ class AuthService(
         }
 
         if (userRepository.existsByEmail(emailClean)) {
-            throw IllegalArgumentException("Email '$emailClean' sudah terdaftar! Silakan Login atau Reset Password.")
+            throw UserAlreadyExistsException("Email '$emailClean' sudah terdaftar! Silakan Login atau Reset Password.")
         }
         if (userRepository.existsByUsername(usernameClean)) {
-            throw IllegalArgumentException("Username '$usernameClean' sudah digunakan. Silakan pilih username lain.")
+            throw UserAlreadyExistsException("Username '$usernameClean' sudah digunakan. Silakan pilih username lain.")
         }
 
         log.info("Creating OTP...")

@@ -19,6 +19,14 @@ class GlobalExceptionHandler {
 
     private val log = LoggerFactory.getLogger(GlobalExceptionHandler::class.java)
 
+    @ExceptionHandler(UserAlreadyExistsException::class)
+    fun handleUserAlreadyExistsException(ex: UserAlreadyExistsException): ResponseEntity<ErrorResponse> {
+        log.warn("Conflict Warning (UserAlreadyExistsException): {}", ex.message)
+        return ResponseEntity
+            .status(HttpStatus.CONFLICT) // HTTP 409 CONFLICT
+            .body(ErrorResponse(success = false, message = ex.message ?: "Data sudah digunakan."))
+    }
+
     @ExceptionHandler(EmailDeliveryException::class)
     fun handleEmailDeliveryException(ex: EmailDeliveryException): ResponseEntity<ErrorResponse> {
         log.error("Email Delivery Error (EmailDeliveryException): {}", ex.message)

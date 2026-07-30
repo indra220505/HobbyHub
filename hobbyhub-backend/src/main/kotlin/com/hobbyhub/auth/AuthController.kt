@@ -9,6 +9,18 @@ class AuthController(
     private val authService: AuthService
 ) {
 
+    @GetMapping("/check-email")
+    fun checkEmail(@RequestParam email: String): ResponseEntity<CheckAvailabilityResponse> {
+        val response = authService.checkEmailAvailability(email)
+        return ResponseEntity.ok(response)
+    }
+
+    @GetMapping("/check-username")
+    fun checkUsername(@RequestParam username: String): ResponseEntity<CheckAvailabilityResponse> {
+        val response = authService.checkUsernameAvailability(username)
+        return ResponseEntity.ok(response)
+    }
+
     @PostMapping("/register")
     fun register(@RequestBody request: RegisterRequest): ResponseEntity<AuthResponse> {
         val response = authService.register(request)
