@@ -40,7 +40,7 @@ class SignalingClient(
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.d(TAG, "WebSocket Opened")
+                Log.d(TAG, "WebSocket Opened to Signaling server")
                 listener.onConnectionEstablished()
                 
                 // Send JOIN message
@@ -53,7 +53,7 @@ class SignalingClient(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                Log.d(TAG, "Received message: $text")
+                Log.d(TAG, "Received signaling message: $text")
                 try {
                     val msg = gson.fromJson(text, SignalingMessage::class.java)
                     when (msg.type) {
@@ -68,16 +68,16 @@ class SignalingClient(
                             listener.onAnswerReceived(msg.senderId, sdp)
                         }
                         "CANDIDATE" -> {
-                            // The payload for CANDIDATE is usually a Map containing sdp, sdpMid, sdpMLineIndex
                             val payloadMap = msg.payload as? Map<*, *> ?: return
                             val sdp = payloadMap["sdp"] as? String ?: return
                             val sdpMid = payloadMap["sdpMid"] as? String ?: ""
-                            val sdpMLineIndex = (payloadMap["sdpMLineIndex"] as? Double)?.toInt() ?: 0
+                            // CRITICAL FIX: Use Number instead of Double so Int/Long/Double from Gson deserialization work!
+                            val sdpMLineIndex = (payloadMap["sdpMLineIndex"] as? Number)?.toInt() ?: 0
                             listener.onIceCandidateReceived(msg.senderId, sdp, sdpMid, sdpMLineIndex)
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error parsing message", e)
+                    Log.e(TAG, "Error parsing signaling message", e)
                 }
             }
 
@@ -86,7 +86,7 @@ class SignalingClient(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e(TAG, "WebSocket Failure", t)
+                Log.e(TAG, "WebSocket Failure: ${t.message}", t)
             }
         })
     }
@@ -130,13 +130,15 @@ class SignalingClient(
     }
 
     fun disconnect() {
-        val msg = SignalingMessage(
-            type = "LEAVE",
-            senderId = userId,
-            roomId = roomId
-        )
-        webSocket?.send(gson.toJson(msg))
-        webSocket?.close(1000, "User disconnected")
+        try {
+            val msg = SignalingMessage(
+                type = "LEAVE",
+                senderId = userId,
+                roomId = roomId
+            )
+            webSocket?.send(gson.toJson(msg))
+            webSocket?.close(1000, "User disconnected")
+        } catch (_: Exception) {}
         webSocket = null
     }
 }

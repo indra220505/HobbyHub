@@ -30,7 +30,11 @@ class WebRtcClient(
 
     private val iceServers = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-        PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
+        PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
+        PeerConnection.IceServer.builder("stun:stun2.l.google.com:19302").createIceServer(),
+        PeerConnection.IceServer.builder("stun:stun3.l.google.com:19302").createIceServer(),
+        PeerConnection.IceServer.builder("stun:stun4.l.google.com:19302").createIceServer(),
+        PeerConnection.IceServer.builder("stun:stun.services.mozilla.com").createIceServer()
     )
 
     init {
@@ -52,41 +56,54 @@ class WebRtcClient(
     }
 
     private fun initWebRtc() {
-        PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(context)
-                .setEnableInternalTracer(true)
-                .createInitializationOptions()
-        )
+        try {
+            PeerConnectionFactory.initialize(
+                PeerConnectionFactory.InitializationOptions.builder(context)
+                    .setEnableInternalTracer(false)
+                    .createInitializationOptions()
+            )
 
-        rootEglBase = EglBase.create()
-        val options = PeerConnectionFactory.Options()
+            rootEglBase = EglBase.create()
+            val options = PeerConnectionFactory.Options()
 
-        peerConnectionFactory = PeerConnectionFactory.builder()
-            .setOptions(options)
-            .createPeerConnectionFactory()
+            peerConnectionFactory = PeerConnectionFactory.builder()
+                .setOptions(options)
+                .createPeerConnectionFactory()
 
-        createLocalAudioTrack()
+            createLocalAudioTrack()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing WebRTC PeerConnectionFactory", e)
+        }
     }
 
     private fun createLocalAudioTrack() {
-        val factory = peerConnectionFactory ?: return
-        
-        // Audio constraints for crystal clear voice chat
-        val audioConstraints = MediaConstraints()
-        audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
-        audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
-        audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
-        audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "true"))
+        try {
+            val factory = peerConnectionFactory ?: return
+            
+            // Audio constraints for crystal clear voice chat
+            val audioConstraints = MediaConstraints()
+            audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
+            audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
+            audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
+            audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "true"))
 
-        localAudioSource = factory.createAudioSource(audioConstraints)
-        localAudioTrack = factory.createAudioTrack("local_audio_track_$userId", localAudioSource)
-        localAudioTrack?.setEnabled(true)
-        localAudioTrack?.setVolume(1.0)
+            localAudioSource = factory.createAudioSource(audioConstraints)
+            localAudioTrack = factory.createAudioTrack("local_audio_track_$userId", localAudioSource)
+            localAudioTrack?.setEnabled(true)
+            localAudioTrack?.setVolume(1.0)
+            Log.d(TAG, "Local Audio Track created successfully for user $userId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating Local Audio Track (Check Mic Permission)", e)
+        }
     }
 
     fun setMicrophoneMute(mute: Boolean) {
-        localAudioTrack?.setEnabled(!mute)
-        audioManager?.isMicrophoneMute = mute
+        try {
+            localAudioTrack?.setEnabled(!mute)
+            audioManager?.isMicrophoneMute = mute
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting mic mute", e)
+        }
     }
 
     private fun getOrCreatePeerConnection(targetUserId: String): PeerConnection? {
@@ -97,6 +114,7 @@ class WebRtcClient(
         val factory = peerConnectionFactory ?: return null
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers)
         rtcConfig.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+        rtcConfig.continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
 
         val pcObserver = object : PeerConnection.Observer {
             override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
@@ -232,19 +250,21 @@ class WebRtcClient(
             }
         } catch (_: Exception) {}
 
-        peerConnections.forEach { (_, pc) -> pc.close() }
+        peerConnections.forEach { (_, pc) -> 
+            try { pc.close() } catch (_: Exception) {}
+        }
         peerConnections.clear()
         
-        localAudioSource?.dispose()
+        try { localAudioSource?.dispose() } catch (_: Exception) {}
         localAudioSource = null
         
-        localAudioTrack?.dispose()
+        try { localAudioTrack?.dispose() } catch (_: Exception) {}
         localAudioTrack = null
         
-        peerConnectionFactory?.dispose()
+        try { peerConnectionFactory?.dispose() } catch (_: Exception) {}
         peerConnectionFactory = null
         
-        rootEglBase?.release()
+        try { rootEglBase?.release() } catch (_: Exception) {}
         rootEglBase = null
     }
 
