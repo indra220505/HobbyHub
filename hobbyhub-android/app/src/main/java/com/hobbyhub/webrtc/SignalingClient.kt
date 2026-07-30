@@ -4,27 +4,28 @@ import android.util.Log
 import com.google.gson.Gson
 import com.hobbyhub.BuildConfig
 import okhttp3.*
-import okio.ByteString
 
 data class SignalingMessage(
     val type: String, // "JOIN", "LEAVE", "OFFER", "ANSWER", "CANDIDATE"
     val senderId: String,
     val targetId: String? = null,
     val roomId: String,
-    val payload: Any? = null
+    val payload: Any? = null,
+    val senderName: String? = null
 )
 
 interface SignalingListener {
     fun onConnectionEstablished()
-    fun onOfferReceived(senderId: String, sdp: String)
+    fun onOfferReceived(senderId: String, senderName: String?, sdp: String)
     fun onAnswerReceived(senderId: String, sdp: String)
     fun onIceCandidateReceived(senderId: String, candidate: String, sdpMid: String, sdpMLineIndex: Int)
-    fun onUserJoined(senderId: String)
+    fun onUserJoined(senderId: String, senderName: String?)
     fun onUserLeft(senderId: String)
 }
 
 class SignalingClient(
     private val userId: String,
+    private val userName: String,
     private val roomId: String,
     private val listener: SignalingListener,
     private val gson: Gson = Gson()
@@ -43,11 +44,12 @@ class SignalingClient(
                 Log.d(TAG, "WebSocket Opened to Signaling server")
                 listener.onConnectionEstablished()
                 
-                // Send JOIN message
+                // Send JOIN message with senderName
                 val joinMsg = SignalingMessage(
                     type = "JOIN",
                     senderId = userId,
-                    roomId = roomId
+                    roomId = roomId,
+                    senderName = userName
                 )
                 webSocket.send(gson.toJson(joinMsg))
             }
@@ -57,11 +59,11 @@ class SignalingClient(
                 try {
                     val msg = gson.fromJson(text, SignalingMessage::class.java)
                     when (msg.type) {
-                        "JOIN" -> listener.onUserJoined(msg.senderId)
+                        "JOIN" -> listener.onUserJoined(msg.senderId, msg.senderName)
                         "LEAVE" -> listener.onUserLeft(msg.senderId)
                         "OFFER" -> {
                             val sdp = msg.payload as? String ?: return
-                            listener.onOfferReceived(msg.senderId, sdp)
+                            listener.onOfferReceived(msg.senderId, msg.senderName, sdp)
                         }
                         "ANSWER" -> {
                             val sdp = msg.payload as? String ?: return
@@ -71,7 +73,6 @@ class SignalingClient(
                             val payloadMap = msg.payload as? Map<*, *> ?: return
                             val sdp = payloadMap["sdp"] as? String ?: return
                             val sdpMid = payloadMap["sdpMid"] as? String ?: ""
-                            // CRITICAL FIX: Use Number instead of Double so Int/Long/Double from Gson deserialization work!
                             val sdpMLineIndex = (payloadMap["sdpMLineIndex"] as? Number)?.toInt() ?: 0
                             listener.onIceCandidateReceived(msg.senderId, sdp, sdpMid, sdpMLineIndex)
                         }
@@ -97,7 +98,8 @@ class SignalingClient(
             senderId = userId,
             targetId = targetId,
             roomId = roomId,
-            payload = sdp
+            payload = sdp,
+            senderName = userName
         )
         webSocket?.send(gson.toJson(msg))
     }
@@ -108,7 +110,8 @@ class SignalingClient(
             senderId = userId,
             targetId = targetId,
             roomId = roomId,
-            payload = sdp
+            payload = sdp,
+            senderName = userName
         )
         webSocket?.send(gson.toJson(msg))
     }
@@ -124,7 +127,8 @@ class SignalingClient(
             senderId = userId,
             targetId = targetId,
             roomId = roomId,
-            payload = payload
+            payload = payload,
+            senderName = userName
         )
         webSocket?.send(gson.toJson(msg))
     }
@@ -134,7 +138,8 @@ class SignalingClient(
             val msg = SignalingMessage(
                 type = "LEAVE",
                 senderId = userId,
-                roomId = roomId
+                roomId = roomId,
+                senderName = userName
             )
             webSocket?.send(gson.toJson(msg))
             webSocket?.close(1000, "User disconnected")

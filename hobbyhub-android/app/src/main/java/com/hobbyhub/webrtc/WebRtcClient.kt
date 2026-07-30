@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioManager
 import android.util.Log
 import org.webrtc.*
+import org.webrtc.audio.JavaAudioDeviceModule
 
 interface WebRtcListener {
     fun onRemoteAudioTrackAdded(userId: String, track: AudioTrack)
@@ -20,6 +21,7 @@ class WebRtcClient(
     private val TAG = "WebRtcClient"
     
     private var peerConnectionFactory: PeerConnectionFactory? = null
+    private var audioDeviceModule: JavaAudioDeviceModule? = null
     private var localAudioSource: AudioSource? = null
     private var localAudioTrack: AudioTrack? = null
     private var rootEglBase: EglBase? = null
@@ -28,13 +30,19 @@ class WebRtcClient(
     // Map of remoteUserId -> PeerConnection
     private val peerConnections = mutableMapOf<String, PeerConnection>()
 
+    // Map of remoteUserId -> AudioTrack (to prevent garbage collection)
+    private val remoteAudioTracks = mutableMapOf<String, AudioTrack>()
+
+    // Queue for ICE candidates arriving before remote description is set
+    private val pendingIceCandidates = mutableMapOf<String, MutableList<IceCandidate>>()
+
     private val iceServers = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun2.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun3.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun4.l.google.com:19302").createIceServer(),
-        PeerConnection.IceServer.builder("stun:stun.services.mozilla.com").createIceServer()
+        PeerConnection.IceServer.builder("stun:global.stun.twilio.com:3478").createIceServer()
     )
 
     init {
@@ -66,8 +74,37 @@ class WebRtcClient(
             rootEglBase = EglBase.create()
             val options = PeerConnectionFactory.Options()
 
+            // Initialize JavaAudioDeviceModule for crystal clear hardware audio processing
+            audioDeviceModule = JavaAudioDeviceModule.builder(context)
+                .setUseHardwareAcousticEchoCanceler(true)
+                .setUseHardwareNoiseSuppressor(true)
+                .setAudioRecordErrorCallback(object : JavaAudioDeviceModule.AudioRecordErrorCallback {
+                    override fun onWebRtcAudioRecordInitError(errorMessage: String?) {
+                        Log.e(TAG, "AudioRecordInitError: $errorMessage")
+                    }
+                    override fun onWebRtcAudioRecordStartError(errorCode: JavaAudioDeviceModule.AudioRecordStartErrorCode?, errorMessage: String?) {
+                        Log.e(TAG, "AudioRecordStartError: $errorMessage")
+                    }
+                    override fun onWebRtcAudioRecordError(errorMessage: String?) {
+                        Log.e(TAG, "AudioRecordError: $errorMessage")
+                    }
+                })
+                .setAudioTrackErrorCallback(object : JavaAudioDeviceModule.AudioTrackErrorCallback {
+                    override fun onWebRtcAudioTrackInitError(errorMessage: String?) {
+                        Log.e(TAG, "AudioTrackInitError: $errorMessage")
+                    }
+                    override fun onWebRtcAudioTrackStartError(errorCode: JavaAudioDeviceModule.AudioTrackStartErrorCode?, errorMessage: String?) {
+                        Log.e(TAG, "AudioTrackStartError: $errorMessage")
+                    }
+                    override fun onWebRtcAudioTrackError(errorMessage: String?) {
+                        Log.e(TAG, "AudioTrackError: $errorMessage")
+                    }
+                })
+                .createAudioDeviceModule()
+
             peerConnectionFactory = PeerConnectionFactory.builder()
                 .setOptions(options)
+                .setAudioDeviceModule(audioDeviceModule)
                 .createPeerConnectionFactory()
 
             createLocalAudioTrack()
@@ -80,7 +117,7 @@ class WebRtcClient(
         try {
             val factory = peerConnectionFactory ?: return
             
-            // Audio constraints for crystal clear voice chat
+            // Mandatory Audio constraints
             val audioConstraints = MediaConstraints()
             audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
             audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
@@ -129,7 +166,6 @@ class WebRtcClient(
             }
 
             override fun onIceConnectionReceivingChange(p0: Boolean) {}
-
             override fun onIceGatheringChange(p0: PeerConnection.IceGatheringState?) {}
 
             override fun onIceCandidate(candidate: IceCandidate) {
@@ -148,11 +184,13 @@ class WebRtcClient(
                     val track = stream.audioTracks[0]
                     track.setEnabled(true)
                     track.setVolume(1.0)
+                    remoteAudioTracks[targetUserId] = track
                     listener.onRemoteAudioTrackAdded(targetUserId, track)
                 }
             }
 
             override fun onRemoveStream(stream: MediaStream) {
+                remoteAudioTracks.remove(targetUserId)
                 listener.onRemoteAudioTrackRemoved(targetUserId)
             }
 
@@ -165,6 +203,7 @@ class WebRtcClient(
                     Log.d(TAG, "Remote Audio Track added from $targetUserId")
                     track.setEnabled(true)
                     track.setVolume(1.0)
+                    remoteAudioTracks[targetUserId] = track
                     listener.onRemoteAudioTrackAdded(targetUserId, track)
                 }
             }
@@ -183,9 +222,15 @@ class WebRtcClient(
         return peerConnection
     }
 
+    private fun drainPendingIceCandidates(targetUserId: String, peerConnection: PeerConnection) {
+        val candidates = pendingIceCandidates.remove(targetUserId) ?: return
+        Log.d(TAG, "Draining ${candidates.size} queued ICE candidates for $targetUserId")
+        for (candidate in candidates) {
+            peerConnection.addIceCandidate(candidate)
+        }
+    }
+
     fun handleUserJoined(targetUserId: String) {
-        // PERFECT NEGOTIATOR / POLITENESS PATTERN:
-        // Avoid WebRTC Glare by having ONLY the peer with lexicographically smaller ID create the OFFER!
         val isOfferer = userId < targetUserId
         if (!isOfferer) {
             Log.d(TAG, "Polite peer ($userId > $targetUserId): Waiting for offer from $targetUserId")
@@ -201,8 +246,11 @@ class WebRtcClient(
         peerConnection.createOffer(object : SdpObserverAdapter() {
             override fun onCreateSuccess(sessionDescription: SessionDescription?) {
                 sessionDescription?.let {
-                    peerConnection.setLocalDescription(SdpObserverAdapter(), it)
-                    signalingClient.sendOffer(targetUserId, it.description)
+                    peerConnection.setLocalDescription(object : SdpObserverAdapter() {
+                        override fun onSetSuccess() {
+                            signalingClient.sendOffer(targetUserId, it.description)
+                        }
+                    }, it)
                 }
             }
         }, constraints)
@@ -215,14 +263,19 @@ class WebRtcClient(
         
         peerConnection.setRemoteDescription(object : SdpObserverAdapter() {
             override fun onSetSuccess() {
+                drainPendingIceCandidates(senderId, peerConnection)
+
                 val constraints = MediaConstraints()
                 constraints.mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
 
                 peerConnection.createAnswer(object : SdpObserverAdapter() {
                     override fun onCreateSuccess(answerSdp: SessionDescription?) {
                         answerSdp?.let {
-                            peerConnection.setLocalDescription(SdpObserverAdapter(), it)
-                            signalingClient.sendAnswer(senderId, it.description)
+                            peerConnection.setLocalDescription(object : SdpObserverAdapter() {
+                                override fun onSetSuccess() {
+                                    signalingClient.sendAnswer(senderId, it.description)
+                                }
+                            }, it)
                         }
                     }
                 }, constraints)
@@ -234,13 +287,22 @@ class WebRtcClient(
         Log.d(TAG, "Handling Answer from $senderId")
         val peerConnection = peerConnections[senderId] ?: return
         val sessionDescription = SessionDescription(SessionDescription.Type.ANSWER, sdp)
-        peerConnection.setRemoteDescription(SdpObserverAdapter(), sessionDescription)
+        peerConnection.setRemoteDescription(object : SdpObserverAdapter() {
+            override fun onSetSuccess() {
+                drainPendingIceCandidates(senderId, peerConnection)
+            }
+        }, sessionDescription)
     }
 
     fun handleIceCandidateReceived(senderId: String, sdp: String, sdpMid: String, sdpMLineIndex: Int) {
-        val peerConnection = peerConnections[senderId] ?: return
         val candidate = IceCandidate(sdpMid, sdpMLineIndex, sdp)
-        peerConnection.addIceCandidate(candidate)
+        val peerConnection = peerConnections[senderId]
+        if (peerConnection != null && peerConnection.remoteDescription != null) {
+            peerConnection.addIceCandidate(candidate)
+        } else {
+            Log.d(TAG, "Queueing ICE candidate for $senderId before remote description is set")
+            pendingIceCandidates.getOrPut(senderId) { mutableListOf() }.add(candidate)
+        }
     }
 
     fun handleUserLeft(senderId: String) {
@@ -250,6 +312,9 @@ class WebRtcClient(
     private fun removePeerConnection(userId: String) {
         val pc = peerConnections.remove(userId)
         pc?.close()
+        val track = remoteAudioTracks.remove(userId)
+        try { track?.dispose() } catch (_: Exception) {}
+        pendingIceCandidates.remove(userId)
         listener.onRemoteAudioTrackRemoved(userId)
     }
 
@@ -266,12 +331,21 @@ class WebRtcClient(
         }
         peerConnections.clear()
         
+        remoteAudioTracks.forEach { (_, track) ->
+            try { track.dispose() } catch (_: Exception) {}
+        }
+        remoteAudioTracks.clear()
+        pendingIceCandidates.clear()
+        
         try { localAudioSource?.dispose() } catch (_: Exception) {}
         localAudioSource = null
         
         try { localAudioTrack?.dispose() } catch (_: Exception) {}
         localAudioTrack = null
         
+        try { audioDeviceModule?.dispose() } catch (_: Exception) {}
+        audioDeviceModule = null
+
         try { peerConnectionFactory?.dispose() } catch (_: Exception) {}
         peerConnectionFactory = null
         

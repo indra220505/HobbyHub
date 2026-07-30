@@ -60,7 +60,13 @@ fun VoiceRoomScreen(
 
     val participants = remember {
         mutableStateListOf(
-            VoiceParticipant(currentUser.id, currentUser.displayName + " (Anda)", currentUser.displayName.take(1).ifBlank { "U" }, isSpeaking = !isMuted, isMuted = isMuted)
+            VoiceParticipant(
+                id = currentUser.id,
+                name = currentUser.displayName + " (Anda)",
+                avatarInitial = currentUser.displayName.take(1).ifBlank { "U" }.uppercase(),
+                isSpeaking = !isMuted,
+                isMuted = isMuted
+            )
         )
     }
 
@@ -73,22 +79,51 @@ fun VoiceRoomScreen(
         hasMicPermission = isGranted
     }
 
-    DisposableEffect(Unit) {
+    fun updateOrAddParticipant(id: String, name: String?, track: AudioTrack? = null, isSpeaking: Boolean = false) {
+        if (id == currentUser.id) return // Don't overwrite self display name with remote signals
+
+        val displayName = name ?: "Anggota ${id.takeLast(4)}"
+        val avatarInitial = displayName.take(1).ifBlank { "U" }.uppercase()
+        val index = participants.indexOfFirst { it.id == id }
+
+        if (index != -1) {
+            val current = participants[index]
+            participants[index] = current.copy(
+                name = displayName,
+                avatarInitial = avatarInitial,
+                audioTrack = track ?: current.audioTrack,
+                isSpeaking = if (track != null) isSpeaking else current.isSpeaking
+            )
+        } else {
+            participants.add(
+                VoiceParticipant(
+                    id = id,
+                    name = displayName,
+                    avatarInitial = avatarInitial,
+                    isSpeaking = isSpeaking,
+                    isMuted = false,
+                    audioTrack = track
+                )
+            )
+        }
+    }
+
+    DisposableEffect(hasMicPermission) {
         if (!hasMicPermission) {
             launcher.launch(Manifest.permission.RECORD_AUDIO)
+            return@DisposableEffect onDispose {}
         }
 
         val sigClient = SignalingClient(
             userId = currentUser.id,
+            userName = currentUser.displayName,
             roomId = channelName,
             listener = object : SignalingListener {
                 override fun onConnectionEstablished() {}
                 
-                override fun onOfferReceived(senderId: String, sdp: String) {
+                override fun onOfferReceived(senderId: String, senderName: String?, sdp: String) {
                     mainHandler.post {
-                        if (participants.none { it.id == senderId }) {
-                            participants.add(VoiceParticipant(senderId, "Anggota ${senderId.takeLast(4)}", senderId.take(1).ifBlank { "U" }, false, false))
-                        }
+                        updateOrAddParticipant(senderId, senderName)
                     }
                     webRtcClient?.handleOfferReceived(senderId, sdp)
                 }
@@ -101,11 +136,9 @@ fun VoiceRoomScreen(
                     webRtcClient?.handleIceCandidateReceived(senderId, candidate, sdpMid, sdpMLineIndex)
                 }
 
-                override fun onUserJoined(senderId: String) {
+                override fun onUserJoined(senderId: String, senderName: String?) {
                     mainHandler.post {
-                        if (participants.none { it.id == senderId }) {
-                            participants.add(VoiceParticipant(senderId, "Anggota ${senderId.takeLast(4)}", senderId.take(1).ifBlank { "U" }, false, false))
-                        }
+                        updateOrAddParticipant(senderId, senderName)
                     }
                     webRtcClient?.handleUserJoined(senderId)
                 }
@@ -127,12 +160,7 @@ fun VoiceRoomScreen(
             listener = object : WebRtcListener {
                 override fun onRemoteAudioTrackAdded(userId: String, track: AudioTrack) {
                     mainHandler.post {
-                        val index = participants.indexOfFirst { it.id == userId }
-                        if (index != -1) {
-                            participants[index] = participants[index].copy(audioTrack = track, isSpeaking = true)
-                        } else {
-                            participants.add(VoiceParticipant(userId, "Anggota ${userId.takeLast(4)}", userId.take(1).ifBlank { "U" }, isSpeaking = true, isMuted = false, audioTrack = track))
-                        }
+                        updateOrAddParticipant(userId, null, track = track, isSpeaking = true)
                     }
                 }
 
@@ -150,9 +178,7 @@ fun VoiceRoomScreen(
         )
         webRtcClient = rtcClient
 
-        if (hasMicPermission) {
-            sigClient.connect()
-        }
+        sigClient.connect()
 
         onDispose {
             sigClient.disconnect()
@@ -193,7 +219,10 @@ fun VoiceRoomScreen(
                 IconButton(
                     onClick = {
                         isMuted = !isMuted
-                        participants[0] = participants[0].copy(isMuted = isMuted, isSpeaking = !isMuted)
+                        val selfIndex = participants.indexOfFirst { it.id == currentUser.id }
+                        if (selfIndex != -1) {
+                            participants[selfIndex] = participants[selfIndex].copy(isMuted = isMuted, isSpeaking = !isMuted)
+                        }
                     },
                     modifier = Modifier
                         .size(56.dp)
@@ -251,7 +280,7 @@ fun VoiceRoomScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(participants) { participant ->
+                items(items = participants, key = { participant -> participant.id }) { participant ->
                     VoiceParticipantCard(participant = participant)
                 }
             }
