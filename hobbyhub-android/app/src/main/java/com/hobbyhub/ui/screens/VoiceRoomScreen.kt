@@ -2,6 +2,8 @@ package com.hobbyhub.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -48,6 +50,8 @@ fun VoiceRoomScreen(
     onDisconnect: () -> Unit
 ) {
     val context = LocalContext.current
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    
     var isMuted by remember { mutableStateOf(false) }
     var isDeafened by remember { mutableStateOf(false) }
     var hasMicPermission by remember { mutableStateOf(
@@ -56,7 +60,7 @@ fun VoiceRoomScreen(
 
     val participants = remember {
         mutableStateListOf(
-            VoiceParticipant(currentUser.id, currentUser.displayName + " (Anda)", currentUser.displayName.take(1), isSpeaking = !isMuted, isMuted = isMuted)
+            VoiceParticipant(currentUser.id, currentUser.displayName + " (Anda)", currentUser.displayName.take(1).ifBlank { "U" }, isSpeaking = !isMuted, isMuted = isMuted)
         )
     }
 
@@ -76,26 +80,40 @@ fun VoiceRoomScreen(
 
         val sigClient = SignalingClient(
             userId = currentUser.id,
-            roomId = channelName, // Simplification: using channel name as room ID
+            roomId = channelName,
             listener = object : SignalingListener {
                 override fun onConnectionEstablished() {}
+                
                 override fun onOfferReceived(senderId: String, sdp: String) {
+                    mainHandler.post {
+                        if (participants.none { it.id == senderId }) {
+                            participants.add(VoiceParticipant(senderId, "Anggota ${senderId.takeLast(4)}", senderId.take(1).ifBlank { "U" }, false, false))
+                        }
+                    }
                     webRtcClient?.handleOfferReceived(senderId, sdp)
                 }
+
                 override fun onAnswerReceived(senderId: String, sdp: String) {
                     webRtcClient?.handleAnswerReceived(senderId, sdp)
                 }
+
                 override fun onIceCandidateReceived(senderId: String, candidate: String, sdpMid: String, sdpMLineIndex: Int) {
                     webRtcClient?.handleIceCandidateReceived(senderId, candidate, sdpMid, sdpMLineIndex)
                 }
+
                 override fun onUserJoined(senderId: String) {
-                    if (participants.none { it.id == senderId }) {
-                        participants.add(VoiceParticipant(senderId, "User $senderId", senderId.take(1), false, false))
+                    mainHandler.post {
+                        if (participants.none { it.id == senderId }) {
+                            participants.add(VoiceParticipant(senderId, "Anggota ${senderId.takeLast(4)}", senderId.take(1).ifBlank { "U" }, false, false))
+                        }
                     }
                     webRtcClient?.handleUserJoined(senderId)
                 }
+
                 override fun onUserLeft(senderId: String) {
-                    participants.removeAll { it.id == senderId }
+                    mainHandler.post {
+                        participants.removeAll { it.id == senderId }
+                    }
                     webRtcClient?.handleUserLeft(senderId)
                 }
             }
@@ -108,19 +126,25 @@ fun VoiceRoomScreen(
             signalingClient = sigClient,
             listener = object : WebRtcListener {
                 override fun onRemoteAudioTrackAdded(userId: String, track: AudioTrack) {
-                    val index = participants.indexOfFirst { it.id == userId }
-                    if (index != -1) {
-                        participants[index] = participants[index].copy(audioTrack = track)
-                    } else {
-                        participants.add(VoiceParticipant(userId, "User $userId", userId.take(1), false, false, audioTrack = track))
+                    mainHandler.post {
+                        val index = participants.indexOfFirst { it.id == userId }
+                        if (index != -1) {
+                            participants[index] = participants[index].copy(audioTrack = track, isSpeaking = true)
+                        } else {
+                            participants.add(VoiceParticipant(userId, "Anggota ${userId.takeLast(4)}", userId.take(1).ifBlank { "U" }, isSpeaking = true, isMuted = false, audioTrack = track))
+                        }
                     }
                 }
+
                 override fun onRemoteAudioTrackRemoved(userId: String) {
-                    val index = participants.indexOfFirst { it.id == userId }
-                    if (index != -1) {
-                        participants[index] = participants[index].copy(audioTrack = null)
+                    mainHandler.post {
+                        val index = participants.indexOfFirst { it.id == userId }
+                        if (index != -1) {
+                            participants[index] = participants[index].copy(audioTrack = null, isSpeaking = false)
+                        }
                     }
                 }
+
                 override fun onError(error: String) {}
             }
         )
@@ -290,11 +314,10 @@ fun VoiceParticipantCard(participant: VoiceParticipant) {
             }
 
             Text(
-                text = if (participant.audioTrack != null) "Tersambung (WebRTC)" else if (participant.isSpeaking) "🎙️ Sedang Bicara..." else if (participant.isMuted) "🔇 Muted" else "Mendengarkan",
+                text = if (participant.audioTrack != null) "🔊 Terhubung (Suara Aktif)" else if (participant.isSpeaking) "🎙️ Sedang Bicara..." else if (participant.isMuted) "🔇 Muted" else "Mendengarkan",
                 color = if (participant.isSpeaking || participant.audioTrack != null) SecondaryTurquoise else TextMuted,
                 fontSize = 11.sp
             )
         }
     }
 }
-

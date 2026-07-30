@@ -1,6 +1,7 @@
 package com.hobbyhub.webrtc
 
 import android.content.Context
+import android.media.AudioManager
 import android.util.Log
 import org.webrtc.*
 
@@ -22,16 +23,32 @@ class WebRtcClient(
     private var localAudioSource: AudioSource? = null
     private var localAudioTrack: AudioTrack? = null
     private var rootEglBase: EglBase? = null
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
     // Map of remoteUserId -> PeerConnection
     private val peerConnections = mutableMapOf<String, PeerConnection>()
 
     private val iceServers = listOf(
-        PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
+        PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
+        PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
     )
 
     init {
+        setupAudioManager()
         initWebRtc()
+    }
+
+    private fun setupAudioManager() {
+        try {
+            audioManager?.let { am ->
+                am.mode = AudioManager.MODE_IN_COMMUNICATION
+                am.isSpeakerphoneOn = true
+                am.isMicrophoneMute = false
+                Log.d(TAG, "AudioManager configured: MODE_IN_COMMUNICATION, Speakerphone ON")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting up AudioManager", e)
+        }
     }
 
     private fun initWebRtc() {
@@ -54,19 +71,22 @@ class WebRtcClient(
     private fun createLocalAudioTrack() {
         val factory = peerConnectionFactory ?: return
         
-        // Audio constraints
+        // Audio constraints for crystal clear voice chat
         val audioConstraints = MediaConstraints()
         audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
         audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
         audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
+        audioConstraints.mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "true"))
 
         localAudioSource = factory.createAudioSource(audioConstraints)
-        localAudioTrack = factory.createAudioTrack("local_audio_track", localAudioSource)
+        localAudioTrack = factory.createAudioTrack("local_audio_track_$userId", localAudioSource)
         localAudioTrack?.setEnabled(true)
+        localAudioTrack?.setVolume(1.0)
     }
 
     fun setMicrophoneMute(mute: Boolean) {
         localAudioTrack?.setEnabled(!mute)
+        audioManager?.isMicrophoneMute = mute
     }
 
     private fun getOrCreatePeerConnection(targetUserId: String): PeerConnection? {
@@ -106,9 +126,11 @@ class WebRtcClient(
             override fun onIceCandidatesRemoved(p0: Array<out IceCandidate>?) {}
 
             override fun onAddStream(stream: MediaStream) {
-                // Deprecated in Unified Plan, but keeping for safety if fallback happens
                 if (stream.audioTracks.isNotEmpty()) {
-                    listener.onRemoteAudioTrackAdded(targetUserId, stream.audioTracks[0])
+                    val track = stream.audioTracks[0]
+                    track.setEnabled(true)
+                    track.setVolume(1.0)
+                    listener.onRemoteAudioTrackAdded(targetUserId, track)
                 }
             }
 
@@ -123,6 +145,8 @@ class WebRtcClient(
                 val track = receiver.track()
                 if (track is AudioTrack) {
                     Log.d(TAG, "Remote Audio Track added from $targetUserId")
+                    track.setEnabled(true)
+                    track.setVolume(1.0)
                     listener.onRemoteAudioTrackAdded(targetUserId, track)
                 }
             }
@@ -144,7 +168,9 @@ class WebRtcClient(
     fun handleUserJoined(targetUserId: String) {
         val peerConnection = getOrCreatePeerConnection(targetUserId) ?: return
 
-        // Create Offer
+        val constraints = MediaConstraints()
+        constraints.mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
+
         peerConnection.createOffer(object : SdpObserverAdapter() {
             override fun onCreateSuccess(sessionDescription: SessionDescription?) {
                 sessionDescription?.let {
@@ -152,7 +178,7 @@ class WebRtcClient(
                     signalingClient.sendOffer(targetUserId, it.description)
                 }
             }
-        }, MediaConstraints())
+        }, constraints)
     }
 
     fun handleOfferReceived(senderId: String, sdp: String) {
@@ -161,7 +187,9 @@ class WebRtcClient(
         
         peerConnection.setRemoteDescription(object : SdpObserverAdapter() {
             override fun onSetSuccess() {
-                // Create Answer
+                val constraints = MediaConstraints()
+                constraints.mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
+
                 peerConnection.createAnswer(object : SdpObserverAdapter() {
                     override fun onCreateSuccess(answerSdp: SessionDescription?) {
                         answerSdp?.let {
@@ -169,7 +197,7 @@ class WebRtcClient(
                             signalingClient.sendAnswer(senderId, it.description)
                         }
                     }
-                }, MediaConstraints())
+                }, constraints)
             }
         }, sessionDescription)
     }
@@ -197,6 +225,13 @@ class WebRtcClient(
     }
 
     fun disconnect() {
+        try {
+            audioManager?.let { am ->
+                am.mode = AudioManager.MODE_NORMAL
+                am.isSpeakerphoneOn = false
+            }
+        } catch (_: Exception) {}
+
         peerConnections.forEach { (_, pc) -> pc.close() }
         peerConnections.clear()
         
@@ -213,7 +248,6 @@ class WebRtcClient(
         rootEglBase = null
     }
 
-    // Helper adapter to avoid implementing all methods
     open class SdpObserverAdapter : SdpObserver {
         override fun onCreateSuccess(p0: SessionDescription?) {}
         override fun onSetSuccess() {}
