@@ -41,6 +41,13 @@ class SecurityConfig(
                     "/error",
                     "/actuator/health/**"
                 ).permitAll()
+                    .requestMatchers(
+                        org.springframework.http.HttpMethod.GET,
+                        "/api/v1/posts",
+                        "/api/v1/posts/**",
+                        "/api/v1/communities",
+                        "/api/v1/communities/**"
+                    ).permitAll()
                     .anyRequest().authenticated()
             }
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter::class.java)
